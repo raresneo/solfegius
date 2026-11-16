@@ -1,4 +1,4 @@
-// Solfegiu: acordaj, ascultare cu urmărire, apoi cânți tu cu metronomul și primești notă cu notă.
+// Solfegiu: acordaj, ascultare cu urmărire, apoi cânți tu cu metronomul și primești notă cu notă: intonație și ritm.
 import type { Exercise } from '../../data/curriculum.ts';
 import type { Runner } from './types.ts';
 import { h, pct, staffBox, availableWidth } from '../dom.ts';
@@ -8,8 +8,10 @@ import { parseMelody, toOnsets } from '../../lib/notation.ts';
 import type { Melody, Onset } from '../../lib/notation.ts';
 import { generateMelody, scaleGame } from '../../lib/melodyGen.ts';
 import { bookMelody } from '../../data/melodies.ts';
-import { parseNote, pitchClassCents, roName, nearestNoteName } from '../../lib/theory.ts';
+import { freqToMidi, parseNote, pitchClassCents, roName, nearestNoteName } from '../../lib/theory.ts';
 import { MIN_CLARITY } from '../../lib/pitch.ts';
+import { detectOnsets, rhythmFromOnsets } from '../../lib/onsets.ts';
+import type { Frame } from '../../lib/onsets.ts';
 import { audioCtx, newVoice, playCadence, playMelody, tone } from '../../audio/audio.ts';
 import type { Playback, Voice } from '../../audio/audio.ts';
 import { MIC_RMS_THRESHOLD, startMic } from '../../audio/mic.ts';
@@ -22,6 +24,9 @@ export interface Resolved {
   bpm: number;
   credit: string;
 }
+
+/** Ponderea intonației în scorul final (restul e ritmul). */
+export const PITCH_WEIGHT = 0.7;
 
 export function resolveMelody(ex: SolEx, seed: number): Resolved {
   if (ex.melodyId) {
@@ -40,6 +45,13 @@ export function judgeNote(cents: (number | null)[]): boolean {
   return good / cents.length >= 0.45;
 }
 
+/** Eticheta de ritm de sub notă: ✓ la timp, +ms întârziat, −ms grăbit, ? atac neauzit. */
+export function timingLabel(hit: boolean, error: number | null): string {
+  if (!hit || error === null) return '?';
+  if (Math.abs(error) <= 0.08) return '✓';
+  return `${error > 0 ? '+' : '−'}${Math.round(Math.abs(error) * 1000)}`;
+}
+
 export const runSolfegiu: Runner<SolEx> = (root, ex, ctx) => {
   let seed = Math.floor(Math.random() * 1e9);
   let r = resolveMelody(ex, seed);
@@ -47,6 +59,7 @@ export const runSolfegiu: Runner<SolEx> = (root, ex, ctx) => {
   let best = 0;
   let sung = false;
   let states: Record<number, NoteState> = {};
+  let resultLabels: Record<number, string> | null = null;
   let pb: Playback | null = null;
   let mic: MicHandle | null = null;
   let tune: Voice | null = null;
@@ -58,7 +71,7 @@ export const runSolfegiu: Runner<SolEx> = (root, ex, ctx) => {
   root.append(box);
 
   const draw = () => {
-    staff.replaceChildren(staffBox(renderStaff({ notes: r.melody.notes, time: r.melody.time, width: availableWidth(box), showNames: ctx.state.settings.showNames, states }).svg));
+    staff.replaceChildren(staffBox(renderStaff({ notes: r.melody.notes, time: r.melody.time, width: availableWidth(box), showNames: ctx.state.settings.showNames, states, labels: resultLabels ?? undefined }).svg));
   };
 
   const stopAll = () => {
@@ -86,6 +99,7 @@ export const runSolfegiu: Runner<SolEx> = (root, ex, ctx) => {
   const listen = () => {
     stopAll();
     states = {};
+    resultLabels = null;
     draw();
     pb = playMelody(r.melody.notes, {
       bpm,
@@ -100,20 +114,25 @@ export const runSolfegiu: Runner<SolEx> = (root, ex, ctx) => {
   const sing = async () => {
     stopAll();
     states = {};
+    resultLabels = null;
     draw();
     const onsets: Onset[] = toOnsets(r.melody.notes, bpm).filter((o) => o.pitch !== null);
     const frames: (number | null)[][] = onsets.map(() => []);
+    const track: Frame[] = [];
     let startPerf = Infinity;
     try {
       mic = await startMic((res, t, level) => {
-        if (res && res.clarity >= MIN_CLARITY) live.textContent = `aud: ${roName(nearestNoteName(res.freq))}`;
+        const clear = res !== null && res.clarity >= MIN_CLARITY;
+        if (clear && res) live.textContent = `aud: ${roName(nearestNoteName(res.freq))}`;
         else live.textContent = level < MIC_RMS_THRESHOLD ? 'nu te aud: apropie telefonul' : 'te aud, caut nota...';
         const rel = t - startPerf;
+        if (rel < -0.3) return;
+        track.push({ t: rel, level, midi: clear && res ? freqToMidi(res.freq) : null });
         if (rel < 0) return;
         const k = onsets.findIndex((o) => rel >= o.start + 0.07 && rel <= o.start + o.dur - 0.04);
         if (k < 0) return;
         const target = parseNote(onsets[k].pitch ?? 'C4').midi;
-        frames[k].push(res && res.clarity >= MIN_CLARITY ? pitchClassCents(res.freq, target) : null);
+        frames[k].push(clear && res ? pitchClassCents(res.freq, target) : null);
       });
     } catch (e) {
       result.textContent = `Nu pot porni microfonul: ${(e as Error).message}. Poți cânta și fără: ascultă, cântă, apoi autoevaluează-te mai jos.`;
@@ -138,12 +157,25 @@ export const runSolfegiu: Runner<SolEx> = (root, ex, ctx) => {
           if (okNote) good++;
           states[o.index] = okNote ? 'ok' : 'bad';
         });
+        const beat = 60 / bpm;
+        const rh = rhythmFromOnsets(onsets.map((o) => o.start), detectOnsets(track, { silence: MIC_RMS_THRESHOLD }), Math.min(0.25, beat * 0.35));
+        const labels: Record<number, string> = {};
+        onsets.forEach((o, k) => (labels[o.index] = timingLabel(rh.results[k].hit, rh.results[k].error)));
+        resultLabels = labels;
         draw();
-        const score = onsets.length ? good / onsets.length : 0;
+        const pitchScore = onsets.length ? good / onsets.length : 0;
+        const score = PITCH_WEIGHT * pitchScore + (1 - PITCH_WEIGHT) * rh.score;
         best = Math.max(best, score);
         sung = true;
         live.textContent = '\u00a0';
-        result.textContent = `${good}/${onsets.length} note intonate corect · ${pct(score)}. ${score >= 0.7 ? 'Foarte bine!' : 'Reia notele roșii: ascultă-le, apoi cântă iar.'}`;
+        const mean = rh.meanError === null ? '' : `, abatere medie ${Math.round(rh.meanError * 1000)} ms`;
+        const advice =
+          pitchScore < 0.7
+            ? 'Reia notele roșii: ascultă-le, apoi cântă iar.'
+            : rh.score < 0.7
+              ? 'Intonația e bună, lucrează ritmul: sub note, + înseamnă întârziat, − grăbit (ms).'
+              : 'Foarte bine!';
+        result.textContent = `${good}/${onsets.length} note intonate corect · ritm: ${rh.hits}/${onsets.length} la timp${mean} · scor ${pct(score)}. ${advice}`;
       },
     });
     startPerf = pb.startPerf;
@@ -191,7 +223,7 @@ export const runSolfegiu: Runner<SolEx> = (root, ex, ctx) => {
     h('div', { class: 'row small' },
       h('label', {}, names, ' Numele notelor'),
       h('label', {}, guide, ' Pian în surdină cât cânt'),
-      ex.generate ? h('button', { class: 'btn ghost', onclick: () => { stopAll(); seed = Math.floor(Math.random() * 1e9); r = resolveMelody(ex, seed); credit.textContent = r.credit; states = {}; result.textContent = '\u00a0'; draw(); } }, '↻ Alt solfegiu') : null,
+      ex.generate ? h('button', { class: 'btn ghost', onclick: () => { stopAll(); seed = Math.floor(Math.random() * 1e9); r = resolveMelody(ex, seed); credit.textContent = r.credit; states = {}; resultLabels = null; result.textContent = '\u00a0'; draw(); } }, '↻ Alt solfegiu') : null,
     ),
     result,
     h('details', { class: 'self' },
