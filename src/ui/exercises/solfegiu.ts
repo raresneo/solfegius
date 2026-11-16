@@ -9,9 +9,10 @@ import type { Melody, Onset } from '../../lib/notation.ts';
 import { generateMelody, scaleGame } from '../../lib/melodyGen.ts';
 import { bookMelody } from '../../data/melodies.ts';
 import { parseNote, pitchClassCents, roName, nearestNoteName } from '../../lib/theory.ts';
+import { MIN_CLARITY } from '../../lib/pitch.ts';
 import { audioCtx, newVoice, playCadence, playMelody, tone } from '../../audio/audio.ts';
 import type { Playback, Voice } from '../../audio/audio.ts';
-import { startMic } from '../../audio/mic.ts';
+import { MIC_RMS_THRESHOLD, startMic } from '../../audio/mic.ts';
 import type { MicHandle } from '../../audio/mic.ts';
 
 type SolEx = Extract<Exercise, { kind: 'solfegiu' }>;
@@ -104,14 +105,15 @@ export const runSolfegiu: Runner<SolEx> = (root, ex, ctx) => {
     const frames: (number | null)[][] = onsets.map(() => []);
     let startPerf = Infinity;
     try {
-      mic = await startMic((res, t) => {
-        if (res && res.clarity >= 0.75) live.textContent = `aud: ${roName(nearestNoteName(res.freq))}`;
+      mic = await startMic((res, t, level) => {
+        if (res && res.clarity >= MIN_CLARITY) live.textContent = `aud: ${roName(nearestNoteName(res.freq))}`;
+        else live.textContent = level < MIC_RMS_THRESHOLD ? 'nu te aud: apropie telefonul' : 'te aud, caut nota...';
         const rel = t - startPerf;
         if (rel < 0) return;
         const k = onsets.findIndex((o) => rel >= o.start + 0.07 && rel <= o.start + o.dur - 0.04);
         if (k < 0) return;
         const target = parseNote(onsets[k].pitch ?? 'C4').midi;
-        frames[k].push(res && res.clarity >= 0.75 ? pitchClassCents(res.freq, target) : null);
+        frames[k].push(res && res.clarity >= MIN_CLARITY ? pitchClassCents(res.freq, target) : null);
       });
     } catch (e) {
       result.textContent = `Nu pot porni microfonul: ${(e as Error).message}. Poți cânta și fără: ascultă, cântă, apoi autoevaluează-te mai jos.`;

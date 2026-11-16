@@ -38,10 +38,10 @@ test('rezistă la zgomot moderat', () => {
   assert.ok(Math.abs(cents(r.freq, 220)) < 15);
 });
 
-test('voce încetă la telefon (RMS ~0.006) e detectată', () => {
+test('voce încetă la telefon (sub vechiul prag de 0.012) e detectată', () => {
   const b = voice(261.63, { amp: 0.015 });
   assert.ok(rms(b) < 0.012, 'semnalul de test trebuie să fie sub vechiul prag');
-  const r = detectPitch(b, 48000 === 0 ? SR : SR);
+  const r = detectPitch(b, SR);
   assert.ok(r, 'nu a detectat vocea încetă');
   assert.ok(Math.abs(cents(r.freq, 261.63)) < 10);
 });
