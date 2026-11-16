@@ -5,8 +5,24 @@ import { toOnsets } from '../lib/notation.ts';
 
 type AC = AudioContext;
 let ctx: AC | null = null;
+let stale = false;
+
+/**
+ * Pe iOS rata de eșantionare a sistemului se schimbă când pornește sau se oprește microfonul,
+ * iar un context audio creat înainte raportează rata veche: măsoară și redă notele decalat.
+ * După apel, următoarea folosire creează un context nou, cu rata corectă.
+ */
+export function invalidateAudioCtx(): void {
+  stale = true;
+}
 
 export function audioCtx(): AC {
+  if (ctx && stale) {
+    const old = ctx;
+    ctx = null;
+    void old.close().catch(() => undefined);
+  }
+  stale = false;
   if (!ctx) {
     const W = window as unknown as { webkitAudioContext?: typeof AudioContext };
     const Ctor = window.AudioContext ?? W.webkitAudioContext;
@@ -34,6 +50,7 @@ export function newVoice(volume = 1): Voice {
     stop() {
       if (stopped) return;
       stopped = true;
+      if (c.state === 'closed') return;
       const t = c.currentTime;
       out.gain.cancelScheduledValues(t);
       out.gain.setValueAtTime(out.gain.value, t);
@@ -44,7 +61,7 @@ export function newVoice(volume = 1): Voice {
 }
 
 export function tone(midi: number, start: number, dur: number, dest: AudioNode, gain = 0.22): void {
-  const c = audioCtx();
+  const c = dest.context as AC;
   const f = midiToFreq(midi);
   const g = c.createGain();
   g.connect(dest);
@@ -72,7 +89,7 @@ export function tone(midi: number, start: number, dur: number, dest: AudioNode, 
 }
 
 export function click(start: number, dest: AudioNode, accent = false): void {
-  const c = audioCtx();
+  const c = dest.context as AC;
   const o = c.createOscillator();
   const g = c.createGain();
   o.type = 'square';
@@ -86,13 +103,13 @@ export function click(start: number, dest: AudioNode, accent = false): void {
 
 export function playNote(pitch: string, dur = 0.9): Voice {
   const v = newVoice();
-  tone(parseNote(pitch).midi, audioCtx().currentTime + 0.02, dur, v.out);
+  tone(parseNote(pitch).midi, v.out.context.currentTime + 0.02, dur, v.out);
   return v;
 }
 
 export function playChord(pitches: string[], dur = 0.9): Voice {
   const v = newVoice();
-  const t = audioCtx().currentTime + 0.02;
+  const t = v.out.context.currentTime + 0.02;
   for (const p of pitches) tone(parseNote(p).midi, t, dur, v.out, 0.14);
   return v;
 }
@@ -127,8 +144,8 @@ export interface Playback {
 }
 
 export function playMelody(notes: MNote[], o: PlayOptions): Playback {
-  const c = audioCtx();
   const v = newVoice();
+  const c = v.out.context as AC;
   const beat = 60 / o.bpm;
   const countBeats = (o.countIn ?? 0) * o.beatsPerMeasure;
   const t0 = c.currentTime + 0.1;
@@ -146,7 +163,7 @@ export function playMelody(notes: MNote[], o: PlayOptions): Playback {
   }
   const timers: number[] = [];
   const perfNow = performance.now() / 1000;
-  const startPerf = perfNow + (startAt - c.currentTime) + outputLatency();
+  const startPerf = perfNow + (startAt - c.currentTime) + outputLatency(c);
   for (const on of onsets) {
     timers.push(window.setTimeout(() => o.onNote?.(on.index), (startAt - c.currentTime + on.start) * 1000));
   }
@@ -161,7 +178,7 @@ export function playMelody(notes: MNote[], o: PlayOptions): Playback {
   };
 }
 
-export function outputLatency(): number {
-  const c = audioCtx() as AC & { outputLatency?: number };
+export function outputLatency(ac: AC = audioCtx()): number {
+  const c = ac as AC & { outputLatency?: number };
   return (c.outputLatency ?? 0) || c.baseLatency || 0;
 }

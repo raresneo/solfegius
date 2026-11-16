@@ -10,8 +10,15 @@ import { playNote } from '../../audio/audio.ts';
 import { MIC_RMS_THRESHOLD, startMic } from '../../audio/mic.ts';
 import type { MicHandle } from '../../audio/mic.ts';
 
-export const HOLD_SECONDS = 0.5;
-export const TOLERANCE_CENTS = 35;
+/** Cât timp din ultima secundă trebuie să fii în toleranță ca nota să fie validată. */
+export const HOLD_SECONDS = 0.45;
+export const WINDOW_SECONDS = 1;
+
+export const LEVELS: { label: string; cents: number }[] = [
+  { label: 'Începător ±50', cents: 50 },
+  { label: 'Mediu ±35', cents: 35 },
+  { label: 'Conservator ±20', cents: 20 },
+];
 
 /** Bară de volum: arată imediat dacă microfonul primește sunet. */
 export function micLevelBar(): { el: HTMLElement; set(level: number): void } {
@@ -35,12 +42,23 @@ export function silenceHint(level: number): string {
     : 'Te aud, dar nu prind nota: ține un sunet stabil, pe „a”';
 }
 
-export function tunerMeter(): { el: HTMLElement; set(cents: number | null, label: string): void } {
+export function tunerMeter(): { el: HTMLElement; setTolerance(cents: number): void; set(cents: number | null, label: string): void } {
+  let tol = 50;
   const needle = h('div', { class: 'needle' });
+  const win = h('div', { class: 'window' });
   const text = h('div', { class: 'tuner-text' }, 'Cântă când ești gata');
-  const el = h('div', { class: 'tuner' }, h('div', { class: 'scale' }, h('span', {}, '−50'), h('span', { class: 'zero' }, '0'), h('span', {}, '+50')), h('div', { class: 'track' }, h('div', { class: 'window' }), needle), text);
+  const el = h('div', { class: 'tuner' }, h('div', { class: 'scale' }, h('span', {}, '−100'), h('span', { class: 'zero' }, '0'), h('span', {}, '+100')), h('div', { class: 'track' }, win, needle), text);
+  const placeWindow = () => {
+    win.style.left = `${50 - tol / 2}%`;
+    win.style.right = `${50 - tol / 2}%`;
+  };
+  placeWindow();
   return {
     el,
+    setTolerance(cents) {
+      tol = cents;
+      placeWindow();
+    },
     set(cents, label) {
       if (cents === null) {
         needle.style.opacity = '0.25';
@@ -48,10 +66,11 @@ export function tunerMeter(): { el: HTMLElement; set(cents: number | null, label
         el.classList.remove('good');
         return;
       }
-      const c = Math.max(-50, Math.min(50, cents));
+      // scala e ±100 de cenți (un semiton în fiecare parte)
+      const c = Math.max(-100, Math.min(100, cents));
       needle.style.opacity = '1';
-      needle.style.left = `${50 + c}%`;
-      el.classList.toggle('good', Math.abs(cents) <= TOLERANCE_CENTS);
+      needle.style.left = `${50 + c / 2}%`;
+      el.classList.toggle('good', Math.abs(cents) <= tol);
       text.textContent = label;
     },
   };
@@ -62,13 +81,15 @@ export const runSing: Runner<Extract<Exercise, { kind: 'sing' }>> = (root, ex, c
   const states: Record<number, 'current' | 'ok' | 'bad'> = {};
   let idx = 0;
   let ok = 0;
-  let held = 0;
   let lastT = 0;
   let mic: MicHandle | null = null;
   const recent: number[] = [];
+  let hist: { t: number; dt: number; ok: boolean }[] = [];
+  const tol = () => ctx.state.settings.tolerance || 50;
   const box = h('div', { class: 'ex ex-sing' });
   const staff = h('div');
   const meter = tunerMeter();
+  meter.setTolerance(tol());
   const levelBar = micLevelBar();
   const status = h('p', { class: 'feedback', 'aria-live': 'polite' }, '\u00a0');
   root.append(box);
@@ -82,7 +103,7 @@ export const runSing: Runner<Extract<Exercise, { kind: 'sing' }>> = (root, ex, c
     states[idx] = good ? 'ok' : 'bad';
     if (good) ok++;
     idx++;
-    held = 0;
+    hist = [];
     recent.length = 0;
     if (idx >= notes.length) {
       mic?.stop();
@@ -99,20 +120,24 @@ export const runSing: Runner<Extract<Exercise, { kind: 'sing' }>> = (root, ex, c
     lastT = t;
     levelBar.set(level);
     if (idx >= notes.length) return;
-    const target = parseNote(notes[idx].pitch);
+    const targetName = notes[idx].pitch;
+    const target = parseNote(targetName);
+    let inTol = false;
     if (!r || r.clarity < MIN_CLARITY) {
-      held = Math.max(0, held - dt);
       meter.set(null, silenceHint(level));
-      return;
+    } else {
+      recent.push(pitchClassCents(r.freq, target.midi));
+      if (recent.length > 5) recent.shift();
+      const c = median(recent);
+      inTol = Math.abs(c) <= tol();
+      const heard = roName(nearestNoteName(r.freq));
+      const verdict = inTol ? 'ține-o!' : c > 0 ? 'prea sus' : 'prea jos';
+      meter.set(c, `aud ${heard} · ${c > 0 ? '+' : ''}${Math.round(c)} cenți față de ${roName(targetName)} · ${verdict}`);
     }
-    recent.push(pitchClassCents(r.freq, target.midi));
-    if (recent.length > 5) recent.shift();
-    const c = median(recent);
-    const heard = roName(nearestNoteName(r.freq));
-    meter.set(c, `${heard} · ${c > 0 ? '+' : ''}${Math.round(c)} cenți${Math.abs(c) <= TOLERANCE_CENTS ? ' · ține-o!' : c > 0 ? ' · prea sus' : ' · prea jos'}`);
-    if (Math.abs(c) <= TOLERANCE_CENTS) held += dt;
-    else held = Math.max(0, held - dt * 0.5);
-    if (held >= HOLD_SECONDS) advance(true);
+    hist.push({ t, dt, ok: inTol });
+    hist = hist.filter((x) => x.t > t - WINDOW_SECONDS);
+    const okTime = hist.reduce((a, x) => a + (x.ok ? x.dt : 0), 0);
+    if (okTime >= HOLD_SECONDS) advance(true);
   };
 
   const micBtn = h('button', { class: 'btn primary', onclick: async () => {
@@ -126,8 +151,17 @@ export const runSing: Runner<Extract<Exercise, { kind: 'sing' }>> = (root, ex, c
     }
   } }, '🎙 Pornește microfonul');
 
+  const levelButtons = LEVELS.map((l) =>
+    h('button', { class: `btn ${tol() === l.cents ? 'primary' : 'ghost'}`, onclick: () => {
+      ctx.state.settings.tolerance = l.cents;
+      ctx.save();
+      meter.setTolerance(l.cents);
+      levelButtons.forEach((b, i) => (b.className = `btn ${LEVELS[i].cents === l.cents ? 'primary' : 'ghost'}`));
+    } }, l.label),
+  );
+
   box.append(
-    h('p', { class: 'hint' }, 'Ascultă nota, apoi cânt-o pe „a” sau pe numele ei. Ține-o în fereastra verde o jumătate de secundă. Orice octavă e bună.'),
+    h('p', { class: 'hint' }, 'Ascultă nota, apoi cânt-o pe „a” sau pe numele ei, ca un sunet lung. Orice octavă e bună.'),
     staff,
     meter.el,
     levelBar.el,
@@ -136,6 +170,7 @@ export const runSing: Runner<Extract<Exercise, { kind: 'sing' }>> = (root, ex, c
       micBtn,
       h('button', { class: 'btn ghost', onclick: () => advance(false) }, 'Sari peste'),
     ),
+    h('div', { class: 'row small' }, h('span', {}, 'Exigență:'), levelButtons),
     status,
   );
   draw();

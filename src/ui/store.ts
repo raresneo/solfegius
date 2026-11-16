@@ -6,6 +6,8 @@ export interface Settings {
   showNames: boolean;
   /** redă melodia în surdină cât cânți (poate deranja microfonul pe difuzor) */
   guide: boolean;
+  /** toleranța la intonație, în cenți (50 = începător, 35 = mediu, 20 = conservator) */
+  tolerance: number;
 }
 
 export interface State {
@@ -19,7 +21,7 @@ export interface State {
 const KEY = 'solfegius.v1';
 
 function fresh(): State {
-  return { version: 1, best: {}, srs: {}, settings: { showNames: true, guide: false }, days: [] };
+  return { version: 1, best: {}, srs: {}, settings: { showNames: true, guide: false, tolerance: 50 }, days: [] };
 }
 
 export function load(): State {
