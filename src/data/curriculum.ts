@@ -24,7 +24,8 @@ export type Exercise =
       generate?: { lesson: number; scaleGame?: boolean };
     }
   | { kind: 'quiz'; id: string; title: string; questions: QuizQuestion[] }
-  | { kind: 'cards'; id: string; title: string; deck: string };
+  | { kind: 'cards'; id: string; title: string; deck: string }
+  | { kind: 'dictation'; id: string; title: string; lesson: number };
 
 export interface TheoryBlock {
   title: string;
@@ -200,6 +201,7 @@ const L: Lesson[] = [
       { kind: 'solfegiu', id: 'gama', title: 'Cântă gama Do major, sus și jos', source: 'C4q D4q | E4q F4q | G4q A4q | B4q C5q | B4q A4q | G4q F4q | E4q D4q | C4h', time: [2, 4], bpm: 60 },
       { kind: 'notes', id: 'citire', title: 'Citește notele gamei', pool: C_SCALE },
       { kind: 'ear', id: 'auz', title: 'Ce treaptă auzi? (după acordaj)', pool: ['C4', 'D4', 'E4', 'F4', 'G4'] },
+      { kind: 'dictation', id: 'dicteu', title: 'Dicteu: scrie ce auzi, pe trepte alăturate', lesson: 1 },
       { kind: 'rhythm', id: 'ritm', title: 'Bate ritmul în 2/4', lesson: 1, measures: 4 },
       { kind: 'solfegiu', id: 'joc', title: 'Joc pe gamă', generate: { lesson: 1, scaleGame: true }, bpm: 66 },
     ],
@@ -227,6 +229,7 @@ const L: Lesson[] = [
     exercises: [
       { kind: 'solfegiu', id: 'arpegiu', title: 'Cântă arpegiul', source: 'C4q E4q | G4q C5q | G4q E4q | C4h', time: [2, 4], bpm: 60 },
       { kind: 'ear', id: 'auz', title: 'Recunoaște sunetele arpegiului', pool: ['C4', 'E4', 'G4', 'C5'] },
+      { kind: 'dictation', id: 'dicteu', title: 'Dicteu cu salturi pe arpegiu', lesson: 2 },
       { kind: 'rhythm', id: 'ritm', title: 'Ritm cu pătrimi și doimi', lesson: 2 },
       { kind: 'solfegiu', id: 's1', title: 'Solfegiul 1', melodyId: 'l2-s1' },
       { kind: 'solfegiu', id: 's2', title: 'Solfegiul 2 · Canon', melodyId: 'l2-s2' },
@@ -254,6 +257,7 @@ const L: Lesson[] = [
       { kind: 'sing', id: 'si-do', title: 'Si care se rezolvă pe Do', targets: ['C4', 'B3', 'C4', 'B4', 'C5'] },
       { kind: 'notes', id: 'citire', title: 'Citire cu Si de jos', pool: ['B3', 'C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'] },
       { kind: 'ear', id: 'auz', title: 'Arpegiu + sensibila', pool: ['C4', 'E4', 'G4', 'B4', 'C5'] },
+      { kind: 'dictation', id: 'dicteu', title: 'Dicteu cu sensibila', lesson: 3 },
       { kind: 'rhythm', id: 'ritm', title: 'Ritm cu optimi', lesson: 3 },
       { kind: 'solfegiu', id: 'mozart', title: 'Mozart · Variațiuni (var. I)', melodyId: 'l3-s3' },
       { kind: 'solfegiu', id: 'gen', title: 'Solfegiu nou (generat pe lecție)', generate: { lesson: 3 } },
@@ -278,6 +282,7 @@ const L: Lesson[] = [
     exercises: [
       { kind: 'sing', id: 'do-re', title: 'Do–Re–Mi', targets: ['C4', 'D4', 'C4', 'D4', 'E4'] },
       { kind: 'ear', id: 'auz', title: 'Re printre sunetele arpegiului', pool: ['C4', 'D4', 'E4', 'G4', 'C5'] },
+      { kind: 'dictation', id: 'dicteu', title: 'Dicteu cu Re și pauze', lesson: 4 },
       { kind: 'rhythm', id: 'ritm', title: 'Ritm cu pauze', lesson: 4 },
       { kind: 'solfegiu', id: 'gen', title: 'Solfegiu nou (generat pe lecție)', generate: { lesson: 4 } },
       { kind: 'solfegiu', id: 'gen2', title: 'Încă unul, alt ritm', generate: { lesson: 4 } },
@@ -302,6 +307,7 @@ const L: Lesson[] = [
     exercises: [
       { kind: 'sing', id: 'sol-la', title: 'Sol–La–Sol', targets: ['G4', 'A4', 'G4', 'A4', 'C5'] },
       { kind: 'ear', id: 'auz', title: 'Toate treptele învățate', pool: ['C4', 'D4', 'E4', 'G4', 'A4', 'B4', 'C5'] },
+      { kind: 'dictation', id: 'dicteu', title: 'Dicteu cu La', lesson: 5 },
       { kind: 'rhythm', id: 'ritm', title: 'Ritm cu pătrime cu punct', lesson: 5 },
       { kind: 'solfegiu', id: 'gen', title: 'Solfegiu nou (generat pe lecție)', generate: { lesson: 5 } },
       { kind: 'solfegiu', id: 'gen2', title: 'Încă unul, alt ritm', generate: { lesson: 5 } },
@@ -327,6 +333,7 @@ const L: Lesson[] = [
       { kind: 'sing', id: 'mi-fa', title: 'Mi–Fa–Mi', targets: ['E4', 'F4', 'E4', 'F4', 'G4'] },
       { kind: 'notes', id: 'citire', title: 'Citire pe tot ambitusul', pool: ['A3', 'B3', 'C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5', 'D5', 'E5'], count: 14 },
       { kind: 'ear', id: 'auz', title: 'Toată gama', pool: C_SCALE },
+      { kind: 'dictation', id: 'dicteu', title: 'Dicteu în 4/4, toată gama', lesson: 6 },
       { kind: 'rhythm', id: 'ritm', title: 'Ritm în 4/4', lesson: 6, measures: 2 },
       { kind: 'solfegiu', id: 'gen', title: 'Solfegiu nou în 4/4', generate: { lesson: 6 } },
     ],

@@ -62,7 +62,8 @@ await step('acasă: capitole + lecția 1', async () => {
 await step('lecția 1: teorie + exerciții', async () => {
   await page.goto(base + '#/lectie/l1');
   await page.getByText('a) Gama Do major').waitFor();
-  if ((await page.locator('.ex-row').count()) !== 5) throw new Error('nu sunt 5 exerciții');
+  const n = await page.locator('.ex-row').count();
+  if (n !== 6) throw new Error(`sunt ${n} exerciții, nu 6`);
   await page.screenshot({ path: `${SHOTS}/02-lectie1.png` });
 });
 
@@ -74,6 +75,18 @@ await step('citire note: 10 întrebări până la rezultat', async () => {
     await page.locator('.choice').first().click();
     await page.waitForTimeout(1600);
   }
+  await page.locator('.result .score').waitFor({ timeout: 5000 });
+});
+
+await step('dicteu: completezi notele, verifici, primești corectura', async () => {
+  await page.goto(base + '#/ex/l1/dicteu');
+  await page.locator('.ex-dict svg').waitFor();
+  for (let i = 0; i < 3; i++) await page.locator('.ex-dict .choice').first().click();
+  await page.getByText('⌫ Șterge').click();
+  await page.getByText('✓ Verifică').click();
+  await page.locator('.ex-dict .feedback', { hasText: 'note corecte' }).waitFor({ timeout: 5000 });
+  await page.screenshot({ path: `${SHOTS}/03b-dicteu.png` });
+  await page.getByText('Gata', { exact: true }).click();
   await page.locator('.result .score').waitFor({ timeout: 5000 });
 });
 

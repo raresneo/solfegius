@@ -11,6 +11,7 @@ import { runRhythm } from './ui/exercises/rhythm.ts';
 import { runSolfegiu } from './ui/exercises/solfegiu.ts';
 import { runQuiz } from './ui/exercises/quiz.ts';
 import { runCards } from './ui/exercises/cards.ts';
+import { runDictation } from './ui/exercises/dictation.ts';
 
 const state = load();
 const app = document.getElementById('app') as HTMLElement;
@@ -24,6 +25,7 @@ const KIND_LABEL: Record<Exercise['kind'], string> = {
   solfegiu: 'Solfegiu',
   quiz: 'Test',
   cards: 'Fișe',
+  dictation: 'Dicteu',
 };
 
 function runExercise(root: HTMLElement, ex: Exercise, ctx: ExCtx): () => void {
@@ -35,6 +37,7 @@ function runExercise(root: HTMLElement, ex: Exercise, ctx: ExCtx): () => void {
     case 'solfegiu': return runSolfegiu(root, ex, ctx);
     case 'quiz': return runQuiz(root, ex, ctx);
     case 'cards': return runCards(root, ex, ctx);
+    case 'dictation': return runDictation(root, ex, ctx);
   }
 }
 
