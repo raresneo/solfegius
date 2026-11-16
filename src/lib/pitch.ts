@@ -16,6 +16,9 @@ export interface PitchOptions {
   threshold?: number;
 }
 
+/** Claritatea minimă de la care considerăm că e o notă cântată (vocea reală are respirație și vibrato). */
+export const MIN_CLARITY = 0.6;
+
 export function rms(buf: ArrayLike<number>): number {
   let s = 0;
   for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
@@ -25,9 +28,9 @@ export function rms(buf: ArrayLike<number>): number {
 export function detectPitch(buf: ArrayLike<number>, sampleRate: number, o: PitchOptions = {}): PitchResult | null {
   const minFreq = o.minFreq ?? 70;
   const maxFreq = o.maxFreq ?? 1100;
-  const threshold = o.threshold ?? 0.12;
+  const threshold = o.threshold ?? 0.15;
   const level = rms(buf);
-  if (level < (o.rmsThreshold ?? 0.01)) return null;
+  if (level < (o.rmsThreshold ?? 0.003)) return null;
   const n = buf.length;
   const maxLag = Math.min(Math.floor(sampleRate / minFreq), Math.floor(n / 2));
   const minLag = Math.max(2, Math.floor(sampleRate / maxFreq));
@@ -60,7 +63,7 @@ export function detectPitch(buf: ArrayLike<number>, sampleRate: number, o: Pitch
   if (tau < 0) {
     let best = minLag;
     for (let lag = minLag; lag <= maxLag; lag++) if (cm[lag] < cm[best]) best = lag;
-    if (cm[best] > 0.3) return null;
+    if (cm[best] > 0.35) return null;
     tau = best;
   }
   let refined = tau;

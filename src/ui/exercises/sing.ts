@@ -4,13 +4,36 @@ import type { Runner } from './types.ts';
 import { h, staffBox } from '../dom.ts';
 import { renderStaff } from '../../lib/staff.ts';
 import { nearestNoteName, parseNote, pitchClassCents, roName } from '../../lib/theory.ts';
-import { median } from '../../lib/pitch.ts';
+import { median, MIN_CLARITY } from '../../lib/pitch.ts';
+import type { PitchResult } from '../../lib/pitch.ts';
 import { playNote } from '../../audio/audio.ts';
-import { startMic } from '../../audio/mic.ts';
+import { MIC_RMS_THRESHOLD, startMic } from '../../audio/mic.ts';
 import type { MicHandle } from '../../audio/mic.ts';
 
-export const HOLD_SECONDS = 0.7;
-export const TOLERANCE_CENTS = 30;
+export const HOLD_SECONDS = 0.5;
+export const TOLERANCE_CENTS = 35;
+
+/** Bară de volum: arată imediat dacă microfonul primește sunet. */
+export function micLevelBar(): { el: HTMLElement; set(level: number): void } {
+  const fill = h('div', { class: 'mic-level-fill' });
+  fill.style.cssText = 'height:100%;width:0;background:var(--ok);transition:width .08s linear';
+  const el = h('div', { class: 'mic-level', title: 'volumul microfonului' }, fill);
+  el.style.cssText = 'height:6px;background:var(--panel2);border-radius:999px;overflow:hidden;margin:-4px 0 10px';
+  return {
+    el,
+    set(level) {
+      fill.style.width = `${Math.min(100, Math.round((level / 0.05) * 100))}%`;
+      fill.style.background = level < MIC_RMS_THRESHOLD ? 'var(--muted)' : 'var(--ok)';
+    },
+  };
+}
+
+/** Mesaj pentru cadrele fără notă: nu te aude deloc vs. te aude, dar sunetul nu e stabil. */
+export function silenceHint(level: number): string {
+  return level < MIC_RMS_THRESHOLD
+    ? 'Nu te aud: apropie telefonul sau cântă mai tare'
+    : 'Te aud, dar nu prind nota: ține un sunet stabil, pe „a”';
+}
 
 export function tunerMeter(): { el: HTMLElement; set(cents: number | null, label: string): void } {
   const needle = h('div', { class: 'needle' });
@@ -46,6 +69,7 @@ export const runSing: Runner<Extract<Exercise, { kind: 'sing' }>> = (root, ex, c
   const box = h('div', { class: 'ex ex-sing' });
   const staff = h('div');
   const meter = tunerMeter();
+  const levelBar = micLevelBar();
   const status = h('p', { class: 'feedback', 'aria-live': 'polite' }, '\u00a0');
   root.append(box);
 
@@ -70,14 +94,15 @@ export const runSing: Runner<Extract<Exercise, { kind: 'sing' }>> = (root, ex, c
     status.textContent = good ? 'Bravo! Următoarea.' : 'Sărită.';
   };
 
-  const onPitch = (r: { freq: number; clarity: number } | null, t: number) => {
+  const onPitch = (r: PitchResult | null, t: number, level: number) => {
     const dt = lastT ? Math.min(0.1, t - lastT) : 0;
     lastT = t;
+    levelBar.set(level);
     if (idx >= notes.length) return;
     const target = parseNote(notes[idx].pitch);
-    if (!r || r.clarity < 0.75) {
+    if (!r || r.clarity < MIN_CLARITY) {
       held = Math.max(0, held - dt);
-      meter.set(null, 'Te ascult...');
+      meter.set(null, silenceHint(level));
       return;
     }
     recent.push(pitchClassCents(r.freq, target.midi));
@@ -91,20 +116,21 @@ export const runSing: Runner<Extract<Exercise, { kind: 'sing' }>> = (root, ex, c
   };
 
   const micBtn = h('button', { class: 'btn primary', onclick: async () => {
-    if (mic) return;
+    mic?.stop();
+    mic = null;
     try {
       mic = await startMic(onPitch);
-      micBtn.textContent = '● Microfon pornit';
-      micBtn.setAttribute('disabled', '');
+      micBtn.textContent = '● Microfon pornit · repornește';
     } catch (e) {
       status.textContent = `Nu pot porni microfonul: ${(e as Error).message}. Verifică permisiunea din browser.`;
     }
   } }, '🎙 Pornește microfonul');
 
   box.append(
-    h('p', { class: 'hint' }, 'Ascultă nota, apoi cânt-o pe „a” sau pe numele ei. Ține-o în fereastra verde cam o secundă. Orice octavă e bună.'),
+    h('p', { class: 'hint' }, 'Ascultă nota, apoi cânt-o pe „a” sau pe numele ei. Ține-o în fereastra verde o jumătate de secundă. Orice octavă e bună.'),
     staff,
     meter.el,
+    levelBar.el,
     h('div', { class: 'row' },
       h('button', { class: 'btn ghost', onclick: () => playNote(notes[Math.min(idx, notes.length - 1)].pitch, 1.4) }, '▶ Ascultă nota'),
       micBtn,
