@@ -28,6 +28,8 @@ export interface GenOptions {
   lesson: number;
   measures?: number;
   seed?: number;
+  /** doime finală și în lecția 1 (unde doimea nu e încă în celule) */
+  finalHalf?: boolean;
 }
 
 export interface Generated {
@@ -90,7 +92,7 @@ export function generateMelody(o: GenOptions): Generated {
   const rng = mulberry32(seed);
   const measures = o.measures ?? (time[0] === 4 ? 4 : 8);
   for (let attempt = 0; attempt < 200; attempt++) {
-    const rhythm = generateRhythm({ cells: LESSON_CELLS[lesson], measures, time, rng, endLong: lesson >= 2 });
+    const rhythm = generateRhythm({ cells: LESSON_CELLS[lesson], measures, time, rng, endLong: lesson >= 2, finalHalf: o.finalHalf });
     const pitchedCount = rhythm.flat().filter((t) => !t.startsWith('r')).length;
     const pitches: string[] = [];
     let cur = lesson === 1 ? 'C4' : pick(['C4', 'E4', 'G4'], rng);

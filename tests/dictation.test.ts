@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { gradeDictation, poolLabels } from '../src/lib/dictation.ts';
-import { generateMelody, LEVELS, levelPool } from '../src/lib/melodyGen.ts';
+import { dictationPhrase, gradeDictation, poolLabels } from '../src/lib/dictation.ts';
+import { LEVELS, levelPool } from '../src/lib/melodyGen.ts';
 import { parseMelody } from '../src/lib/notation.ts';
+import { parseNote } from '../src/lib/theory.ts';
 
 test('dicteu: notare exactă pe octavă; pauzele și nota dată nu se punctează', () => {
   const exp = ['C4', 'D4', null, 'E4', 'C5'];
@@ -28,12 +29,20 @@ test('etichete de octavă pentru butoane', () => {
   assert.equal(l.D4, 'Re');
 });
 
-test('frazele de dicteu au toate notele în butoanele lecției', () => {
+test('frazele de dicteu: note doar din butoanele lecției, final lung pe Do, lecția 1 treptat', () => {
   for (const lesson of [1, 2, 3, 4, 5, 6]) {
     const pool = new Set(levelPool(LEVELS[lesson]));
-    for (let seed = 1; seed <= 60; seed++) {
-      const g = generateMelody({ lesson, measures: lesson >= 6 ? 2 : 3, seed });
-      for (const n of parseMelody(g.source, g.time).notes) if (n.pitch) assert.ok(pool.has(n.pitch), `${lesson}/${seed}: ${n.pitch}`);
+    for (let seed = 1; seed <= 80; seed++) {
+      const g = dictationPhrase(lesson, seed);
+      const notes = parseMelody(g.source, g.time).notes;
+      const ps = notes.filter((n) => n.pitch).map((n) => n.pitch as string);
+      for (const p of ps) assert.ok(pool.has(p), `${lesson}/${seed}: ${p}`);
+      assert.equal(ps[ps.length - 1][0], 'C', `${lesson}/${seed}: nu se termină pe Do`);
+      assert.equal(notes[notes.length - 1].type, 'h', `${lesson}/${seed}: final fără doime`);
+      assert.ok(ps.length >= 3 && ps.length <= 12, `${lesson}/${seed}: ${ps.length} note`);
+      if (lesson === 1) {
+        for (let i = 1; i < ps.length; i++) assert.ok(Math.abs(parseNote(ps[i]).diatonic - parseNote(ps[i - 1]).diatonic) <= 1, `salt la seed ${seed}`);
+      }
     }
   }
 });

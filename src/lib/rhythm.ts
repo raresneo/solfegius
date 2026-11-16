@@ -39,6 +39,8 @@ export interface RhythmOptions {
   rng: Rng;
   /** ultima măsură se încheie cu o durată lungă (dacă există doimea în celule) */
   endLong?: boolean;
+  /** doime finală chiar dacă nu e încă în celule (ca gama din lecția 1, care se încheie pe Do lung) */
+  finalHalf?: boolean;
 }
 
 /** Generează măsuri de durate, ex. [['q','q'], ['h']]. Fără pauză pe primul timp al piesei și fără două pauze la rând. */
@@ -51,7 +53,7 @@ export function generateRhythm(o: RhythmOptions): string[][] {
     const isLast = m === o.measures - 1;
     const measure: string[] = [];
     let pos = 0;
-    if (isLast && o.endLong && hasHalf) {
+    if (isLast && ((o.endLong && hasHalf) || o.finalHalf)) {
       // final: umplem până la ultimii 2 timpi, apoi o doime
       while (len - pos > 2) {
         measure.push('q');

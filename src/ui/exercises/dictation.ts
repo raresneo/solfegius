@@ -6,8 +6,8 @@ import { renderStaff } from '../../lib/staff.ts';
 import type { NoteState } from '../../lib/staff.ts';
 import { parseMelody } from '../../lib/notation.ts';
 import type { Melody, MNote } from '../../lib/notation.ts';
-import { generateMelody, LEVELS, levelPool } from '../../lib/melodyGen.ts';
-import { gradeDictation, poolLabels } from '../../lib/dictation.ts';
+import { LEVELS, levelPool } from '../../lib/melodyGen.ts';
+import { dictationPhrase, gradeDictation, poolLabels } from '../../lib/dictation.ts';
 import type { DictationGrade } from '../../lib/dictation.ts';
 import { roName } from '../../lib/theory.ts';
 import { audioCtx, newVoice, playCadence, playMelody, playNote } from '../../audio/audio.ts';
@@ -44,7 +44,7 @@ export const runDictation: Runner<DictEx> = (root, ex, ctx) => {
   };
 
   const fresh = () => {
-    const g = generateMelody({ lesson, measures: lesson >= 6 ? 2 : 3, seed: Math.floor(Math.random() * 1e9) });
+    const g = dictationPhrase(lesson, Math.floor(Math.random() * 1e9));
     mel = parseMelody(g.source, g.time);
     answers = mel.notes.map(() => null);
     const first = mel.notes.findIndex((n) => n.pitch !== null);

@@ -1,5 +1,17 @@
-// Dicteu melodic: notare și etichete pentru butoanele de note.
+// Dicteu melodic: fraza de dictat, notare și etichete pentru butoanele de note.
 import { parseNote, roName } from './theory.ts';
+import { generateMelody } from './melodyGen.ts';
+import type { Generated } from './melodyGen.ts';
+
+/**
+ * Fraza de dicteu pe lecție: scurtă, cu doime la final ca să se audă concluzia pe Do.
+ * Lecția 1 are 4 măsuri: în mers strict treptat, de la Do înapoi pe Do e nevoie de un număr par de pași.
+ */
+export function dictationPhrase(lesson: number, seed: number): Generated {
+  const l = Math.min(Math.max(lesson, 1), 6);
+  const measures = l >= 6 ? 2 : l === 1 ? 4 : 3;
+  return generateMelody({ lesson: l, measures, seed, finalHalf: true });
+}
 
 export interface DictationGrade {
   /** pe fiecare poziție: e corectă? (pauzele sunt mereu corecte) */
