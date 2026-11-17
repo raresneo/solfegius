@@ -1,0 +1,20 @@
+{
+  "name": "solfegius",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Solfegiu de la zero, interactiv. PWA fără dependențe la rulare.",
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.ts",
+    "e2e": "node tests/e2e/smoke.mjs",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.2",
+    "playwright": "^1.58.2",
+    "typescript": "^5.6.3"
+  }
+}
