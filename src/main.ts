@@ -339,13 +339,18 @@ export function trainingPlan(): { lesson: Lesson; ex: Exercise }[] {
   return plan;
 }
 
-function viewTraining(step = 0, scores: number[] = []): void {
-  const plan = trainingPlan();
+/**
+ * Planul se fixează la pornire: dacă lecția se termină la jumătatea antrenamentului,
+ * nu sărim peste exerciții și nu schimbăm lista sub tine.
+ */
+function viewTraining(step = 0, scores: number[] = [], plan = trainingPlan()): void {
+  window.scrollTo(0, 0);
   if (step >= plan.length) {
     const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
     app.replaceChildren(
       h('h1', {}, 'Gata pe azi'),
-      resultPanel(avg, `${plan.length} exerciții. Revino mâine: ziua de mâine contează mai mult decât încă o oră azi.`, [
+      resultPanel(avg, `${scores.length} din ${plan.length} exerciții făcute. Revino mâine: ziua de mâine contează mai mult decât încă o oră azi.`, [
+        h('a', { class: 'btn', href: '#/parcurs' }, 'Parcurs'),
         h('a', { class: 'btn primary', href: '#/' }, 'Acasă'),
       ]),
     );
@@ -353,9 +358,18 @@ function viewTraining(step = 0, scores: number[] = []): void {
   }
   const { lesson, ex } = plan[step];
   const body = h('div', { class: 'ex-body' });
+  const skip = () => {
+    cleanup();
+    cleanup = () => undefined;
+    viewTraining(step + 1, scores, plan);
+  };
   app.replaceChildren(
     h('a', { href: '#/', class: 'back' }, '← Acasă'),
-    h('div', { class: 'ex-head' }, h('span', { class: 'muted' }, `Antrenament · ${step + 1} / ${plan.length}`), progressBar(step / plan.length)),
+    h('div', { class: 'ex-head' },
+      h('span', { class: 'muted' }, `Antrenament · ${step + 1} / ${plan.length}`),
+      progressBar(step / plan.length),
+      h('button', { class: 'btn ghost', onclick: skip, 'aria-label': 'Sari peste exercițiul ăsta' }, 'Sari ›'),
+    ),
     h('h1', { class: 'ex-title' }, h('span', { class: `kind k-${ex.kind}` }, KIND_LABEL[ex.kind]), ' ', ex.title),
     h('p', { class: 'muted small' }, `Lecția ${lesson.num}`),
     body,
@@ -367,7 +381,7 @@ function viewTraining(step = 0, scores: number[] = []): void {
     markPracticed(state);
     save(state);
     body.replaceChildren(resultPanel(score, summary, [
-      h('button', { class: 'btn primary', onclick: () => viewTraining(step + 1, [...scores, score]) }, 'Continuă ›'),
+      h('button', { class: 'btn primary', onclick: () => viewTraining(step + 1, [...scores, score], plan) }, 'Continuă ›'),
     ]));
   }));
 }
