@@ -100,6 +100,7 @@ export const runSing: Runner<Extract<Exercise, { kind: 'sing' }>> = (root, ex, c
   };
 
   const advance = (good: boolean) => {
+    if (idx >= notes.length) return;
     states[idx] = good ? 'ok' : 'bad';
     if (good) ok++;
     idx++;
@@ -113,6 +114,15 @@ export const runSing: Runner<Extract<Exercise, { kind: 'sing' }>> = (root, ex, c
     }
     draw();
     status.textContent = good ? 'Bravo! Următoarea.' : 'Sărită.';
+  };
+
+  /** Când microfonul nu te prinde (telefon, zgomot), lecția nu rămâne blocată: te autoevaluezi, ca la solfegiu. */
+  const selfFinish = (score: number, label: string) => {
+    if (idx >= notes.length) return;
+    idx = notes.length;
+    mic?.stop();
+    mic = null;
+    ctx.finish(Math.max(score, ok / notes.length), `autoevaluare: ${label}`);
   };
 
   const onPitch = (r: PitchResult | null, t: number, level: number) => {
@@ -147,7 +157,7 @@ export const runSing: Runner<Extract<Exercise, { kind: 'sing' }>> = (root, ex, c
       mic = await startMic(onPitch);
       micBtn.textContent = '● Microfon pornit · repornește';
     } catch (e) {
-      status.textContent = `Nu pot porni microfonul: ${(e as Error).message}. Verifică permisiunea din browser.`;
+      status.textContent = `Nu pot porni microfonul: ${(e as Error).message}. Verifică permisiunea din browser sau autoevaluează-te mai jos.`;
     }
   } }, '🎙 Pornește microfonul');
 
@@ -172,6 +182,14 @@ export const runSing: Runner<Extract<Exercise, { kind: 'sing' }>> = (root, ex, c
     ),
     h('div', { class: 'row small' }, h('span', {}, 'Exigență:'), levelButtons),
     status,
+    h('details', { class: 'self' },
+      h('summary', {}, 'Microfonul nu te prinde? Autoevaluează-te'),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn', onclick: () => selfFinish(1, 'mi-a ieșit') }, 'Mi-a ieșit'),
+        h('button', { class: 'btn', onclick: () => selfFinish(0.5, 'pe jumătate') }, 'Pe jumătate'),
+        h('button', { class: 'btn', onclick: () => selfFinish(0.2, 'nu încă') }, 'Nu încă'),
+      ),
+    ),
   );
   draw();
   return () => mic?.stop();

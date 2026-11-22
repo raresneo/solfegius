@@ -6,7 +6,7 @@ import { renderStaff } from '../../lib/staff.ts';
 import type { NoteState } from '../../lib/staff.ts';
 import { parseMelody, rhythmSyllable, toOnsets } from '../../lib/notation.ts';
 import type { Melody } from '../../lib/notation.ts';
-import { generateRhythm, LESSON_CELLS, LESSON_TIME, scoreTaps } from '../../lib/rhythm.ts';
+import { generateRhythm, LESSON_CELLS, LESSON_TIME, scoreTapsCompensated } from '../../lib/rhythm.ts';
 import { mulberry32 } from '../../lib/random.ts';
 import { playMelody } from '../../audio/audio.ts';
 import type { Playback } from '../../audio/audio.ts';
@@ -68,13 +68,15 @@ export const runRhythm: Runner<Extract<Exercise, { kind: 'rhythm' }>> = (root, e
       pad.classList.remove('live');
       const beat = 60 / bpm;
       const expected = onsets.map((o) => startPerf + o.start);
-      const s = scoreTaps(expected, taps, Math.min(0.2, beat * 0.3));
+      // un decalaj constant (căști Bluetooth, ecran) nu e greșeală de ritm: îl scădem dacă bătăile sunt egale între ele
+      const s = scoreTapsCompensated(expected, taps, Math.min(0.2, beat * 0.3));
       states = {};
       onsets.forEach((o, k) => (states[o.index] = s.results[k].hit ? 'ok' : 'bad'));
       draw();
       best = Math.max(best, s.score);
       const ms = s.meanError === null ? '' : ` · abatere medie ${Math.round(s.meanError * 1000)} ms`;
-      result.textContent = `${s.hits}/${onsets.length} bătăi la timp${s.extras ? ` · ${s.extras} în plus` : ''}${ms} · scor ${pct(s.score)}`;
+      const lat = s.latency ? ` · decalaj constant de ${Math.round(Math.abs(s.latency) * 1000)} ms (căști/ecran), compensat` : '';
+      result.textContent = `${s.hits}/${onsets.length} bătăi la timp${s.extras ? ` · ${s.extras} în plus` : ''}${ms}${lat} · scor ${pct(s.score)}`;
     };
   };
 
