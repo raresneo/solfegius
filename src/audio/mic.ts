@@ -1,5 +1,5 @@
 // Microfon + detecție de înălțime în timp real.
-import { audioCtx, invalidateAudioCtx } from './audio.ts';
+import { audioCtx, invalidateAudioCtx, setRecording } from './audio.ts';
 import { detectPitch, rms } from '../lib/pitch.ts';
 import type { PitchResult } from '../lib/pitch.ts';
 
@@ -15,11 +15,19 @@ export const MIC_RMS_THRESHOLD = 0.003;
 
 export async function startMic(onPitch: PitchListener): Promise<MicHandle> {
   if (!navigator.mediaDevices?.getUserMedia) throw new Error('Microfonul nu e disponibil în acest browser (cere HTTPS)');
+  // iOS: sesiunea audio trece pe „înregistrare + redare” înainte de microfon, altfel metronomul poate tăcea
+  setRecording(true);
   // context pornit în gestul utilizatorului (iOS cere asta), înainte de dialogul de permisiune
   audioCtx();
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-  });
+  let stream: MediaStream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+  } catch (e) {
+    setRecording(false);
+    throw e;
+  }
   // Microfonul a schimbat rata de eșantionare a sistemului (iOS): lucrăm pe un context nou,
   // altfel frecvența măsurată iese decalată și notele corecte par greșite.
   invalidateAudioCtx();
@@ -62,6 +70,8 @@ export async function startMic(onPitch: PitchListener): Promise<MicHandle> {
       src.disconnect();
       analyser.disconnect();
       mute.disconnect();
+      // înapoi pe redare: sunetele de după (cadență, note) se aud și pe silențios
+      setRecording(false);
       // la oprire iOS revine la rata de redare: următorul sunet pornește pe un context proaspăt
       invalidateAudioCtx();
     },

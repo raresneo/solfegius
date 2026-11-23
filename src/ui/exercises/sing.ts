@@ -4,15 +4,18 @@ import type { Runner } from './types.ts';
 import { h, staffBox } from '../dom.ts';
 import { renderStaff } from '../../lib/staff.ts';
 import { nearestNoteName, parseNote, pitchClassCents, roName } from '../../lib/theory.ts';
-import { median, MIN_CLARITY } from '../../lib/pitch.ts';
+import { MIN_CLARITY } from '../../lib/pitch.ts';
 import type { PitchResult } from '../../lib/pitch.ts';
+import { holdDetector } from '../../lib/hold.ts';
 import { playNote } from '../../audio/audio.ts';
 import { MIC_RMS_THRESHOLD, startMic } from '../../audio/mic.ts';
 import type { MicHandle } from '../../audio/mic.ts';
 
-/** Cât timp din ultima secundă trebuie să fii în toleranță ca nota să fie validată. */
-export const HOLD_SECONDS = 0.45;
-export const WINDOW_SECONDS = 1;
+export { HOLD_SECONDS, WINDOW_SECONDS } from '../../lib/hold.ts';
+
+/** Cât ține nota de referință; cât timp după ea microfonul n-o mai ia drept vocea ta. */
+const REF_SECONDS = 1.4;
+const REF_ECHO = 0.35;
 
 export const LEVELS: { label: string; cents: number }[] = [
   { label: 'Începător ±50', cents: 50 },
@@ -81,10 +84,11 @@ export const runSing: Runner<Extract<Exercise, { kind: 'sing' }>> = (root, ex, c
   const states: Record<number, 'current' | 'ok' | 'bad'> = {};
   let idx = 0;
   let ok = 0;
-  let lastT = 0;
   let mic: MicHandle | null = null;
-  const recent: number[] = [];
-  let hist: { t: number; dt: number; ok: boolean }[] = [];
+  let quietUntil = 0;
+  let lastClear = 0;
+  // centrul intonației pe ~0,35 s, nu cadru cu cadru: vibrato-ul de cântăreț nu mai scoate nota din toleranță
+  const hold = holdDetector();
   const tol = () => ctx.state.settings.tolerance || 50;
   const box = h('div', { class: 'ex ex-sing' });
   const staff = h('div');
@@ -104,8 +108,7 @@ export const runSing: Runner<Extract<Exercise, { kind: 'sing' }>> = (root, ex, c
     states[idx] = good ? 'ok' : 'bad';
     if (good) ok++;
     idx++;
-    hist = [];
-    recent.length = 0;
+    hold.reset();
     if (idx >= notes.length) {
       mic?.stop();
       mic = null;
@@ -126,28 +129,29 @@ export const runSing: Runner<Extract<Exercise, { kind: 'sing' }>> = (root, ex, c
   };
 
   const onPitch = (r: PitchResult | null, t: number, level: number) => {
-    const dt = lastT ? Math.min(0.1, t - lastT) : 0;
-    lastT = t;
     levelBar.set(level);
     if (idx >= notes.length) return;
+    if (t < quietUntil) {
+      // nota de referință iese din difuzor: n-o luăm drept vocea ta
+      meter.set(null, `Ascultă ${roName(notes[idx].pitch)}, apoi cânt-o`);
+      hold.reset();
+      return;
+    }
     const targetName = notes[idx].pitch;
     const target = parseNote(targetName);
-    let inTol = false;
-    if (!r || r.clarity < MIN_CLARITY) {
-      meter.set(null, silenceHint(level));
+    const clear = r !== null && r.clarity >= MIN_CLARITY;
+    const reading = hold.push(t, clear && r ? pitchClassCents(r.freq, target.midi) : null, tol());
+    if (!clear || !r || reading.center === null) {
+      // o respirație sau o consoană scurtă nu mai face acul să dispară
+      if (t - lastClear > 0.25) meter.set(null, silenceHint(level));
     } else {
-      recent.push(pitchClassCents(r.freq, target.midi));
-      if (recent.length > 5) recent.shift();
-      const c = median(recent);
-      inTol = Math.abs(c) <= tol();
+      lastClear = t;
+      const c = reading.center;
       const heard = roName(nearestNoteName(r.freq));
-      const verdict = inTol ? 'ține-o!' : c > 0 ? 'prea sus' : 'prea jos';
+      const verdict = reading.inTol ? 'ține-o!' : c > 0 ? 'prea sus' : 'prea jos';
       meter.set(c, `aud ${heard} · ${c > 0 ? '+' : ''}${Math.round(c)} cenți față de ${roName(targetName)} · ${verdict}`);
     }
-    hist.push({ t, dt, ok: inTol });
-    hist = hist.filter((x) => x.t > t - WINDOW_SECONDS);
-    const okTime = hist.reduce((a, x) => a + (x.ok ? x.dt : 0), 0);
-    if (okTime >= HOLD_SECONDS) advance(true);
+    if (reading.held) advance(true);
   };
 
   const micBtn = h('button', { class: 'btn primary', onclick: async () => {
@@ -170,13 +174,19 @@ export const runSing: Runner<Extract<Exercise, { kind: 'sing' }>> = (root, ex, c
     } }, l.label),
   );
 
+  const listen = () => {
+    quietUntil = performance.now() / 1000 + REF_SECONDS + REF_ECHO;
+    hold.reset();
+    playNote(notes[Math.min(idx, notes.length - 1)].pitch, REF_SECONDS);
+  };
+
   box.append(
-    h('p', { class: 'hint' }, 'Ascultă nota, apoi cânt-o pe „a” sau pe numele ei, ca un sunet lung. Orice octavă e bună.'),
+    h('p', { class: 'hint' }, 'Ascultă nota, apoi cânt-o pe „a” sau pe numele ei, ca un sunet lung. Orice octavă e bună, vibrato-ul e în regulă.'),
     staff,
     meter.el,
     levelBar.el,
     h('div', { class: 'row' },
-      h('button', { class: 'btn ghost', onclick: () => playNote(notes[Math.min(idx, notes.length - 1)].pitch, 1.4) }, '▶ Ascultă nota'),
+      h('button', { class: 'btn ghost', onclick: listen }, '▶ Ascultă nota'),
       micBtn,
       h('button', { class: 'btn ghost', onclick: () => advance(false) }, 'Sari peste'),
     ),

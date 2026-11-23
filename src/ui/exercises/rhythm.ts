@@ -18,6 +18,15 @@ export function rhythmMelody(lesson: number, measures: number, seed: number): Me
   return parseMelody(src, time);
 }
 
+/**
+ * Momentul bătăii, în secunde pe ceasul performance.now(): timeStamp-ul evenimentului (când ai atins ecranul),
+ * nu când a ajuns JavaScript-ul să-l proceseze. Dacă browserul dă altă bază de timp, cădem pe acum.
+ */
+export function eventSeconds(e: Event, now = performance.now()): number {
+  const ts = e.timeStamp;
+  return (ts > 0 && Math.abs(now - ts) < 1000 ? ts : now) / 1000;
+}
+
 export const runRhythm: Runner<Extract<Exercise, { kind: 'rhythm' }>> = (root, ex, ctx) => {
   const measures = ex.measures ?? 4;
   let seed = Math.floor(Math.random() * 1e9);
@@ -27,6 +36,7 @@ export const runRhythm: Runner<Extract<Exercise, { kind: 'rhythm' }>> = (root, e
   let pb: Playback | null = null;
   let taps: number[] = [];
   let capturing = false;
+  let timer = 0;
   let states: Record<number, NoteState> = {};
   const box = h('div', { class: 'ex ex-rhythm' });
   const staff = h('div');
@@ -40,6 +50,7 @@ export const runRhythm: Runner<Extract<Exercise, { kind: 'rhythm' }>> = (root, e
   };
 
   const stop = () => {
+    clearTimeout(timer);
     pb?.stop();
     pb = null;
     capturing = false;
@@ -59,7 +70,7 @@ export const runRhythm: Runner<Extract<Exercise, { kind: 'rhythm' }>> = (root, e
     draw();
     result.textContent = 'Ascultă numărătoarea (o măsură), apoi bate pe fiecare notă.';
     const onsets = toOnsets(mel.notes, bpm).filter((o) => o.pitch !== null);
-    pb = playMelody(mel.notes, { bpm, beatsPerMeasure: mel.time[0], countIn: 1, metronome: true, melody: false, onEnd: () => setTimeout(evaluate, 350) });
+    pb = playMelody(mel.notes, { bpm, beatsPerMeasure: mel.time[0], countIn: 1, metronome: true, melody: false, onEnd: () => { timer = window.setTimeout(evaluate, 350); } });
     const startPerf = pb.startPerf;
     capturing = true;
     pad.classList.add('live');
@@ -68,29 +79,31 @@ export const runRhythm: Runner<Extract<Exercise, { kind: 'rhythm' }>> = (root, e
       pad.classList.remove('live');
       const beat = 60 / bpm;
       const expected = onsets.map((o) => startPerf + o.start);
-      // un decalaj constant (căști Bluetooth, ecran) nu e greșeală de ritm: îl scădem dacă bătăile sunt egale între ele
-      const s = scoreTapsCompensated(expected, taps, Math.min(0.2, beat * 0.3));
+      // decalajul constant (căști Bluetooth, ecran) nu e greșeală de ritm, iar bătăile date din reflex pe
+      // numărătoare nu se mai socotesc „în plus”
+      const s = scoreTapsCompensated(expected, taps, Math.min(0.2, beat * 0.3), { ignoreBefore: Math.min(0.4, beat * 0.5), ignoreAfter: 0.6 });
       states = {};
       onsets.forEach((o, k) => (states[o.index] = s.results[k].hit ? 'ok' : 'bad'));
       draw();
       best = Math.max(best, s.score);
       const ms = s.meanError === null ? '' : ` · abatere medie ${Math.round(s.meanError * 1000)} ms`;
       const lat = s.latency ? ` · decalaj constant de ${Math.round(Math.abs(s.latency) * 1000)} ms (căști/ecran), compensat` : '';
-      result.textContent = `${s.hits}/${onsets.length} bătăi la timp${s.extras ? ` · ${s.extras} în plus` : ''}${ms}${lat} · scor ${pct(s.score)}`;
+      const ign = s.ignored ? ` · ${s.ignored} în afara melodiei (numărătoare), ignorate` : '';
+      result.textContent = `${s.hits}/${onsets.length} bătăi la timp${s.extras ? ` · ${s.extras} în plus` : ''}${ms}${lat}${ign} · scor ${pct(s.score)}`;
     };
   };
 
   const tap = (e: Event) => {
     e.preventDefault();
     if (!capturing) return;
-    taps.push(performance.now() / 1000);
+    taps.push(eventSeconds(e));
     pad.classList.remove('flash');
     void pad.offsetWidth;
     pad.classList.add('flash');
   };
   const pad = h('button', { class: 'tap-pad', onpointerdown: tap }, 'BATE AICI');
   const onKey = (e: KeyboardEvent) => {
-    if (e.code === 'Space') tap(e);
+    if (e.code === 'Space' && !e.repeat) tap(e);
   };
   window.addEventListener('keydown', onKey);
 
@@ -102,7 +115,7 @@ export const runRhythm: Runner<Extract<Exercise, { kind: 'rhythm' }>> = (root, e
   });
 
   box.append(
-    h('p', { class: 'hint' }, 'Rostește silabele în gând (ta, ta-a, ti-ti) și bate pe începutul fiecărei note. Pe pauze nu bați.'),
+    h('p', { class: 'hint' }, 'Rostește silabele în gând (ta, ta-a, ti-ti) și bate pe începutul fiecărei note. Pe pauze nu bați. Poți bate și pe numărătoare, nu se socotește.'),
     staff,
     h('div', { class: 'row' }, h('label', { class: 'tempo' }, 'Tempo ', tempo), tempoLabel),
     h('div', { class: 'row' },
