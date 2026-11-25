@@ -18,7 +18,15 @@ export type IconName =
   | 'flame'
   | 'play'
   | 'route'
-  | 'bars';
+  | 'bars'
+  | 'mask'
+  | 'timer'
+  | 'eye'
+  | 'target'
+  | 'book'
+  | 'feather'
+  | 'list'
+  | 'search';
 
 const FILL = 'fill="currentColor" stroke="none"';
 
@@ -39,6 +47,14 @@ const PATHS: Record<IconName, string> = {
   play: `<path ${FILL} d="M8 4.8v14.4a1 1 0 0 0 1.5.9l11-7.2a1 1 0 0 0 0-1.8l-11-7.2A1 1 0 0 0 8 4.8z"/>`,
   route: `<circle cx="6" cy="18" r="2.2" ${FILL}/><circle cx="18" cy="6" r="2.2" ${FILL}/><path d="M8.5 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.5"/>`,
   bars: '<path d="M5.5 20v-7M12 20V5M18.5 20v-10"/>',
+  mask: '<path d="M4 5.5c2.6 1 5.4 1.5 8 1.5s5.4-.5 8-1.5v6.2a8 8 0 0 1-16 0z"/><path d="M8.3 11.3h2.2M13.5 11.3h2.2M9 15.2c1.8 1.5 4.2 1.5 6 0"/>',
+  timer: '<circle cx="12" cy="13.5" r="7.2"/><path d="M12 13.5V9.8M9.8 3.5h4.4M18.2 7.3l1.3-1.3"/>',
+  eye: `<path d="M2.8 12S6.2 5.8 12 5.8 21.2 12 21.2 12 17.8 18.2 12 18.2 2.8 12 2.8 12z"/><circle cx="12" cy="12" r="2.8" ${FILL}/>`,
+  target: `<circle cx="12" cy="12" r="8.6"/><circle cx="12" cy="12" r="4.8"/><circle cx="12" cy="12" r="1.5" ${FILL}/>`,
+  book: '<path d="M4.5 19V5.5a2 2 0 0 1 2-2H19v14.8H6.5a2 2 0 0 0-2 2 2 2 0 0 0 2 2H19"/><path d="M8.5 7.5h6.5"/>',
+  feather: '<path d="M20 4c-7 0-12 5-12 12v4"/><path d="M8 15.5c4.5 0 8.6-3.3 10-8.5"/><path d="M5 20h7"/>',
+  list: `<path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.8" cy="6.5" r="1.3" ${FILL}/><circle cx="4.8" cy="12" r="1.3" ${FILL}/><circle cx="4.8" cy="17.5" r="1.3" ${FILL}/>`,
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5l5 5"/>',
 };
 
 export function icon(name: IconName): HTMLElement {

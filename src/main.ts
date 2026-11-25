@@ -18,6 +18,7 @@ import { runSolfegiu } from './ui/exercises/solfegiu.ts';
 import { runQuiz } from './ui/exercises/quiz.ts';
 import { runCards } from './ui/exercises/cards.ts';
 import { runDictation } from './ui/exercises/dictation.ts';
+import { clearScena, renderScena, scenaFocus, scenaHomeCard, scenaStats } from './scena/index.ts';
 
 const state = load();
 const app = document.getElementById('app') as HTMLElement;
@@ -130,6 +131,8 @@ function viewHome(): void {
     ),
     h('div', { class: 'sec-head' }, h('h2', {}, 'Antrenează o abilitate'), h('a', { href: '#/parcurs', class: 'link' }, 'Parcursul ›')),
     h('div', { class: 'skills' }, SKILLS.map((sk, i) => skillCard(sk, i))),
+    h('div', { class: 'sec-head' }, h('h2', {}, 'Scena · artistul liric'), h('a', { href: '#/scena', class: 'link' }, 'Scena ›')),
+    scenaHomeCard(state),
   );
 }
 
@@ -393,6 +396,7 @@ function viewProgress(): void {
   const mastered = notes.filter(([, c]) => c.box >= 3).length;
   const cards = Object.entries(state.srs).filter(([k]) => k.startsWith('card:'));
   const cardsKnown = cards.filter(([, c]) => c.box >= 3).length;
+  const sc = scenaStats(state);
   app.replaceChildren(
     h('h1', {}, 'Progres'),
     h('div', { class: 'stats' },
@@ -401,12 +405,14 @@ function viewProgress(): void {
       h('div', { class: 'stat' }, h('b', {}, `${done}/${ls.length}`), h('span', {}, 'lecții terminate')),
       h('div', { class: 'stat' }, h('b', {}, `${mastered}/${notes.length}`), h('span', {}, 'note stăpânite')),
       h('div', { class: 'stat' }, h('b', {}, `${cardsKnown}/${cards.length}`), h('span', {}, 'fișe știute')),
+      h('div', { class: 'stat' }, h('b', {}, `${sc.done}/${sc.total}`), h('span', {}, 'exerciții de scenă')),
     ),
     h('ul', { class: 'lessons' }, ls.map((l) => h('li', {}, h('a', { href: `#/lectie/${l.id}`, class: 'lesson-row' }, h('span', { class: 'num' }, l.num), h('span', { class: 'lt' }, l.title), badge(l))))),
     h('p', { class: 'muted small' }, 'Progresul stă doar pe acest dispozitiv.'),
     h('button', { class: 'btn ghost', onclick: () => {
       if (confirm('Ștergi tot progresul de pe acest dispozitiv?')) {
         localStorage.removeItem('solfegius.v1');
+        clearScena();
         location.reload();
       }
     } }, 'Resetează progresul'),
@@ -418,6 +424,7 @@ function viewProgress(): void {
 const TABS: { id: string; href: string; label: string; icon: IconName }[] = [
   { id: 'azi', href: '#/', label: 'Azi', icon: 'play' },
   { id: 'parcurs', href: '#/parcurs', label: 'Parcurs', icon: 'route' },
+  { id: 'scena', href: '#/scena', label: 'Scenă', icon: 'mask' },
   { id: 'progres', href: '#/progres', label: 'Progres', icon: 'bars' },
 ];
 
@@ -427,7 +434,9 @@ const tabbar = h('nav', { class: 'tabbar', 'aria-label': 'Navigare' },
 document.body.append(tabbar);
 
 /** Tab-ul activ; '' = mod concentrat (exercițiu, antrenament): bara de jos dispare. */
-function tabFor(section: string | undefined): string {
+function tabFor(parts: string[]): string {
+  const section = parts[0];
+  if (section === 'scena') return scenaFocus(parts.slice(1)) ? '' : 'scena';
   if (section === 'parcurs' || section === 'lectie') return 'parcurs';
   if (section === 'progres') return 'progres';
   if (section === 'ex' || section === 'antrenament') return '';
@@ -441,6 +450,10 @@ function render(parts: string[]): void {
   if (parts[0] === 'progres') return viewProgress();
   if (parts[0] === 'parcurs') return viewPath();
   if (parts[0] === 'abilitate' && parts[1]) return viewSkill(parts[1]);
+  if (parts[0] === 'scena') {
+    cleanup = renderScena({ app, state, save: () => save(state), resultPanel }, parts.slice(1));
+    return;
+  }
   viewHome();
 }
 
@@ -450,7 +463,7 @@ function route(): void {
   tuning?.stop();
   tuning = null;
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
-  const tab = tabFor(parts[0]);
+  const tab = tabFor(parts);
   document.body.dataset.focus = tab ? '' : '1';
   for (const a of tabbar.querySelectorAll('a')) a.classList.toggle('active', a.dataset.tab === tab);
   window.scrollTo(0, 0);

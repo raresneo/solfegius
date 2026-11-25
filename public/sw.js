@@ -1,6 +1,6 @@
 // Offline: aplicația merge și fără internet după prima deschidere.
 const CACHE = 'solfegius-__VERSION__';
-const ASSETS = ['./', 'index.html', 'app.js', 'styles.css', 'manifest.webmanifest', 'icon.svg'];
+const ASSETS = ['./', 'index.html', 'app.js', 'styles.css', 'scena.css', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
