@@ -1,0 +1,31 @@
+name: scena-import
+on:
+  push:
+    branches: [feat/v0.3-scena]
+    paths: ['.github/workflows/scena-import.yml']
+permissions:
+  contents: write
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.3-scena
+      - name: Descarca pachetul si verifica amprentele
+        env:
+          BUNDLE_URL: https://search.clickup-eu.com/workspaces/90151068705/files/DIzFRiDJDNlpQZxHj2g5NGwzcdlMOgm1Def-XdsBtYg
+        run: |
+          curl -fsSL "$BUNDLE_URL" -o /tmp/scena_bundle.txt
+          echo "959ec0ad64c986250994467916c6eb9b03f6bf8c6fea19abd853107c2f56514e  /tmp/scena_bundle.txt" | sha256sum -c -
+          base64 -d /tmp/scena_bundle.txt > /tmp/scena_bundle.tgz
+          echo "51a061bd2234805be97df0b24b92513a60b40c656fd129b0c3b6a062b2edbf79  /tmp/scena_bundle.tgz" | sha256sum -c -
+          tar xzf /tmp/scena_bundle.tgz
+      - name: Commit
+        run: |
+          git rm -q .github/workflows/scena-import.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Scena: logica, ecranele, integrarea si datele (import verificat SHA-256)"
+          git push origin HEAD:feat/v0.3-scena
