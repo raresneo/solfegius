@@ -52,11 +52,41 @@ const step = async (name, fn) => {
   try { await fn(); results.push(`✔ ${name}`); } catch (e) { results.push(`✘ ${name}: ${e.message.split('\n')[0]}`); }
 };
 
-await step('acasă: capitole + lecția 1', async () => {
+await step('azi: salut, săptămâna, antrenamentul și 7 abilități', async () => {
   await page.goto(base);
+  await page.getByText('Gata de antrenament?').waitFor();
+  const skills = await page.locator('.skill').count();
+  if (skills !== 7) throw new Error(`sunt ${skills} abilități, nu 7`);
+  const days = await page.locator('.week .day').count();
+  if (days !== 7) throw new Error(`săptămâna are ${days} zile`);
+  await page.waitForTimeout(900);
+  await page.screenshot({ path: `${SHOTS}/01-azi.png` });
+});
+
+await step('parcurs: capitole, lecția 1, un singur nod curent pe primul exercițiu', async () => {
+  await page.goto(base + '#/parcurs');
   await page.getByText('Capitolul A · I. Gama Do major').waitFor();
   await page.getByText('Scara gamei Do major · Măsura de 2/4').waitFor();
-  await page.screenshot({ path: `${SHOTS}/01-acasa.png`, fullPage: false });
+  const cur = page.locator('.node.current');
+  if ((await cur.count()) !== 1) throw new Error('nu e exact un nod curent');
+  const href = await cur.getAttribute('href');
+  if (href !== '#/ex/m0-1/lines') throw new Error(`nod curent ${href}`);
+  await page.waitForTimeout(900);
+  await page.screenshot({ path: `${SHOTS}/01b-parcurs.png` });
+});
+
+await step('abilitate: citire, 6 exerciții + următorul', async () => {
+  await page.goto(base + '#/abilitate/citire');
+  const n = await page.locator('.ex-row').count();
+  if (n !== 6) throw new Error(`sunt ${n} exerciții de citire, nu 6`);
+  await page.getByText('Următorul: Notele de pe linii').waitFor();
+});
+
+await step('mod concentrat: bara de jos dispare în exercițiu', async () => {
+  await page.goto(base + '#/ex/l1/auz');
+  if (await page.locator('.tabbar').isVisible()) throw new Error('bara de jos e vizibilă în exercițiu');
+  await page.goto(base + '#/parcurs');
+  if (!(await page.locator('.tabbar').isVisible())) throw new Error('bara de jos lipsește din parcurs');
 });
 
 await step('lecția 1: teorie + exerciții', async () => {
@@ -98,6 +128,8 @@ await step('intonație: Do cântat la microfon (o octavă mai jos) e acceptat', 
   await page.locator('.result .score').waitFor({ timeout: 12000 });
   const score = await page.locator('.result .score').textContent();
   if (score !== '100%') throw new Error(`scor ${score}`);
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: `${SHOTS}/04b-rezultat.png` });
 });
 
 await step('intonație: Sol cântat ca Do e respins', async () => {
@@ -153,6 +185,17 @@ await step('progresul persistă după reîncărcare', async () => {
   await page.reload();
   const days = await page.locator('.stat b').nth(1).textContent();
   if (days !== '1') throw new Error(`zile = ${days}`);
+});
+
+await step('parcurs după exerciții: Do cântat e bifat, nodul curent rămâne unul singur', async () => {
+  await page.goto(base + '#/parcurs');
+  await page.locator('.node.done[href="#/ex/m0-4/do"]').waitFor();
+  if ((await page.locator('.node.current').count()) !== 1) throw new Error('nu e exact un nod curent');
+  await page.goto(base);
+  await page.getByText('Bravo, ai exersat azi.').waitFor();
+  await page.locator('.week .day.done.today').waitFor();
+  await page.waitForTimeout(900);
+  await page.screenshot({ path: `${SHOTS}/10-azi-dupa.png` });
 });
 
 await step('antrenamentul de azi pornește', async () => {

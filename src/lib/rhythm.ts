@@ -129,3 +129,75 @@ export function scoreTaps(expected: number[], taps: number[], tol: number): TapS
     meanError: errs.length ? errs.reduce((a, b) => a + b, 0) / errs.length : null,
   };
 }
+
+export interface LagOptions {
+  /** cel mai mare decalaj pe care îl considerăm latență (secunde) */
+  maxShift?: number;
+  /** împrăștierea mediană maximă în jurul decalajului: peste ea nu e latență, e ritm inegal */
+  maxSpread?: number;
+  /** ce parte din note trebuie să aibă un eveniment în apropiere ca să avem încredere în estimare */
+  minShare?: number;
+  minCount?: number;
+}
+
+/**
+ * Decalajul constant dintre ce s-a cerut și ce s-a întâmplat (bătăi sau atacuri cântate), în secunde.
+ * Pozitiv = constant după metronom: ecranul, difuzorul, căștile Bluetooth (pe AirPods 150–250 ms).
+ * Întoarce 0 când nu e un decalaj clar și constant, ca ritmul inegal să rămână greșit.
+ */
+export function estimateLag(expected: number[], events: number[], o: LagOptions = {}): number {
+  const maxShift = o.maxShift ?? 0.35;
+  const maxSpread = o.maxSpread ?? 0.08;
+  const diffs: number[] = [];
+  for (const t of expected) {
+    let d = Infinity;
+    for (const x of events) if (Math.abs(x - t) < Math.abs(d)) d = x - t;
+    if (Math.abs(d) <= maxShift) diffs.push(d);
+  }
+  if (diffs.length < Math.max(o.minCount ?? 2, Math.ceil(expected.length * (o.minShare ?? 0.5)))) return 0;
+  const sorted = [...diffs].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const lag = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  if (Math.abs(lag) < 0.03) return 0;
+  const spread = diffs.map((d) => Math.abs(d - lag)).sort((a, b) => a - b)[Math.floor(diffs.length / 2)];
+  return spread > maxSpread ? 0 : lag;
+}
+
+export interface CompensatedScore extends TapScore {
+  /** decalajul constant scăzut din bătăi, în secunde (pozitiv = bați constant după metronom) */
+  latency: number;
+  /** bătăi ignorate pentru că au căzut pe numărătoare sau după final */
+  ignored: number;
+}
+
+export interface CompensateOptions {
+  maxShift?: number;
+  /** ignoră bătăile cu mai mult de atât înainte de prima notă (numărătoarea), în secunde */
+  ignoreBefore?: number;
+  /** ignoră bătăile cu mai mult de atât după ultima notă, în secunde */
+  ignoreAfter?: number;
+}
+
+/**
+ * Ca scoreTaps, dar scade întâi un decalaj constant: latența ecranului, a difuzorului, a căștilor Bluetooth
+ * (pe iPhone cu AirPods ajunge la 150–250 ms și făcea orice bătaie „ratată”). Contează să bați egal cu
+ * metronomul; un decalaj fix de până la maxShift nu e o greșeală de ritm. Se păstrează varianta cu scor mai mare.
+ * Bătăile date pe numărătoare (muzicienii bat din reflex odată cu metronomul) nu se mai socotesc „în plus”.
+ */
+export function scoreTapsCompensated(expected: number[], taps: number[], tol: number, opts: number | CompensateOptions = {}): CompensatedScore {
+  const o: CompensateOptions = typeof opts === 'number' ? { maxShift: opts } : opts;
+  const maxShift = o.maxShift ?? 0.35;
+  let kept = taps;
+  if (expected.length && (o.ignoreBefore !== undefined || o.ignoreAfter !== undefined)) {
+    const lag0 = estimateLag(expected, taps, { maxShift });
+    const first = expected[0] - (o.ignoreBefore ?? Infinity);
+    const last = expected[expected.length - 1] + (o.ignoreAfter ?? Infinity);
+    kept = taps.filter((x) => x - lag0 >= first && x - lag0 <= last);
+  }
+  const ignored = taps.length - kept.length;
+  const raw = scoreTaps(expected, kept, tol);
+  const lag = estimateLag(expected, kept, { maxShift });
+  if (!lag) return { ...raw, latency: 0, ignored };
+  const shifted = scoreTaps(expected, kept.map((x) => x - lag), tol);
+  return shifted.score > raw.score ? { ...shifted, latency: lag, ignored } : { ...raw, latency: 0, ignored };
+}

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateRhythm, LESSON_CELLS, LESSON_TIME, scoreTaps, tokenLength } from '../src/lib/rhythm.ts';
+import { estimateLag, generateRhythm, LESSON_CELLS, LESSON_TIME, scoreTaps, scoreTapsCompensated, tokenLength } from '../src/lib/rhythm.ts';
 import { mulberry32 } from '../src/lib/random.ts';
 import { measureLength } from '../src/lib/notation.ts';
 
@@ -31,4 +31,44 @@ test('scor tap: perfect, decalat, ratat, în plus', () => {
   assert.equal(s.extras, 1);
   assert.ok(s.score < 0.5);
   assert.equal(scoreTaps(exp, [], 0.15).score, 0);
+});
+
+test('latență: un decalaj constant (căști Bluetooth) e compensat', () => {
+  const exp = [0, 1, 2, 3, 4, 5];
+  assert.equal(scoreTaps(exp, exp.map((x) => x + 0.22), 0.18).score, 0);
+  const s = scoreTapsCompensated(exp, [0.2, 1.25, 2.17, 3.23, 4.19, 5.26], 0.18);
+  assert.equal(s.score, 1);
+  assert.ok(Math.abs(s.latency - 0.215) < 0.01);
+});
+
+test('latență: bătăile la timp nu se ating, cele împrăștiate nu se „repară”', () => {
+  const exp = [0, 1, 2, 3, 4, 5];
+  const exact = scoreTapsCompensated(exp, exp.map((x) => x + 0.01), 0.18);
+  assert.deepEqual([exact.score, exact.latency], [1, 0]);
+  const messy = scoreTapsCompensated(exp, [0.3, 0.7, 2.25, 2.9, 4.33, 5.1], 0.18);
+  assert.equal(messy.latency, 0);
+  assert.equal(messy.score, scoreTaps(exp, [0.3, 0.7, 2.25, 2.9, 4.33, 5.1], 0.18).score);
+  assert.equal(scoreTapsCompensated(exp, exp.map((x) => x + 0.5), 0.18).score, 0);
+  assert.equal(scoreTapsCompensated(exp, [], 0.18).score, 0);
+});
+
+test('estimateLag: decalaj constant găsit, împrăștiere sau prea puține bătăi = 0', () => {
+  const exp = [0, 1, 2, 3, 4, 5];
+  assert.ok(Math.abs(estimateLag(exp, exp.map((x) => x + 0.2)) - 0.2) < 1e-9);
+  assert.equal(estimateLag(exp, [0.3, 0.7, 2.25, 2.9, 4.33, 5.1]), 0);
+  assert.equal(estimateLag(exp, [0.2]), 0);
+});
+
+test('numărătoarea: bătăile date odată cu metronomul înainte de prima notă nu se socotesc „în plus”', () => {
+  // 4/4 la 72: patru bătăi de numărătoare + 8 note, toate cu AirPods (+220 ms)
+  const beat = 60 / 72;
+  const exp = [0, 1, 2, 3, 4, 4.5, 5, 6].map((b) => b * beat);
+  const count = [-4, -3, -2, -1].map((b) => b * beat);
+  const taps = [...count, ...exp].map((x) => x + 0.22);
+  const tol = Math.min(0.2, beat * 0.3);
+  assert.ok(scoreTapsCompensated(exp, taps, tol).score <= 0.75, 'fără fereastră, numărătoarea costă');
+  const s = scoreTapsCompensated(exp, taps, tol, { ignoreBefore: Math.min(0.4, beat * 0.5), ignoreAfter: 0.6 });
+  assert.equal(s.score, 1);
+  assert.equal(s.ignored, 4);
+  assert.equal(s.extras, 0);
 });

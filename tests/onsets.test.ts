@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectOnsets, rhythmFromOnsets, ONSET_LAG } from '../src/lib/onsets.ts';
+import { detectOnsets, rhythmFromOnsets, smoothTrack, ONSET_LAG } from '../src/lib/onsets.ts';
 import type { Frame } from '../src/lib/onsets.ts';
 
 interface Seg {
@@ -60,9 +60,32 @@ test('vibrato ±0,3 semitonuri nu produce atacuri false', () => {
   near(detectOnsets(frames([{ dur: 1.5, midi: 67, vib: 0.3 }])), [0]);
 });
 
+test('vibrato de cântăreț (±0,8 semitonuri): netezirea scoate atacurile false, schimbările de notă rămân', () => {
+  const segs: Seg[] = [60, 62, 64, 65, 67, 69, 71, 72].map((midi) => ({ dur: 0.9, midi, vib: 0.8 }));
+  const raw = detectOnsets(frames(segs));
+  assert.ok(raw.length > 16, `fără netezire ar trebui să apară atacuri false (${raw.length})`);
+  const on = detectOnsets(smoothTrack(frames(segs)), { stableFrames: 5, settle: 0.12 });
+  assert.equal(on.length, 8, `atacuri: ${on.map((x) => x.toFixed(2)).join(' ')}`);
+  // fiecare notă are atacul ei, la cel mult 80 ms de începutul real (toleranța ritmului e 250 ms)
+  segs.forEach((_, k) => assert.ok(on.some((x) => Math.abs(x - k * 0.9) <= 0.08), `nota ${k}: ${on.map((x) => x.toFixed(2)).join(' ')}`));
+});
+
+test('netezirea nu trece peste liniște și nu atinge cadrele fără notă', () => {
+  const f = frames([{ dur: 0.3, midi: 60 }, { dur: 0.2, midi: null }, { dur: 0.3, midi: 67 }]);
+  const s = smoothTrack(f);
+  assert.ok(s.slice(0, 18).every((x) => x.midi !== null && Math.abs(x.midi - 60) < 1e-9));
+  assert.ok(s.slice(18, 30).every((x) => x.midi === null));
+  assert.ok(s.slice(30).every((x) => x.midi !== null && Math.abs(x.midi - 67) < 1e-9));
+});
+
 test('scorul de ritm: câte note încep la timp (cu compensarea întârzierii de detecție)', () => {
   const s = rhythmFromOnsets([0, 1, 2], [ONSET_LAG + 0.01, 1 + ONSET_LAG + 0.05, 2.4], 0.2);
   assert.equal(s.hits, 2);
   assert.ok(Math.abs(s.score - 2 / 3) < 1e-9);
   assert.ok(s.results[0].hit && Math.abs((s.results[0].error ?? 1) - 0.01) < 1e-9);
+});
+
+test('scorul de ritm cu decalaj: atacurile întârziate constant de căști ies la timp', () => {
+  const s = rhythmFromOnsets([0, 1, 2], [0.25 + ONSET_LAG, 1.25 + ONSET_LAG, 2.25 + ONSET_LAG], 0.2, 0.25);
+  assert.equal(s.hits, 3);
 });

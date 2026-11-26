@@ -6,6 +6,28 @@ import { toOnsets } from '../lib/notation.ts';
 type AC = AudioContext;
 let ctx: AC | null = null;
 let stale = false;
+let recording = false;
+
+/**
+ * iOS: implicit, Web Audio e sunet „ambiental” și tace când telefonul e pe silențios (WebKit 237322), deci
+ * cadența, notele, metronomul și dicteul nu se auzeau deloc. „playback” = sunet de aplicație muzicală,
+ * se aude și pe silențios. Cât e pornit microfonul trebuie „play-and-record”. Safari 16.4+; altundeva nu face nimic.
+ */
+function setAudioSession(type: 'playback' | 'play-and-record'): void {
+  const s = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+  if (!s) return;
+  try {
+    if (s.type !== type) s.type = type;
+  } catch {
+    /* tip nesuportat: rămâne cel implicit */
+  }
+}
+
+/** Microfonul pornește/se oprește: sesiunea audio trebuie să știe (vezi setAudioSession). */
+export function setRecording(on: boolean): void {
+  recording = on;
+  setAudioSession(on ? 'play-and-record' : 'playback');
+}
 
 /**
  * Pe iOS rata de eșantionare a sistemului se schimbă când pornește sau se oprește microfonul,
@@ -17,10 +39,11 @@ export function invalidateAudioCtx(): void {
 }
 
 export function audioCtx(): AC {
-  if (ctx && stale) {
+  if (!recording) setAudioSession('playback');
+  if (ctx && (stale || ctx.state === 'closed')) {
     const old = ctx;
     ctx = null;
-    void old.close().catch(() => undefined);
+    if (old.state !== 'closed') void old.close().catch(() => undefined);
   }
   stale = false;
   if (!ctx) {
@@ -29,7 +52,9 @@ export function audioCtx(): AC {
     if (!Ctor) throw new Error('Browserul nu suportă Web Audio');
     ctx = new Ctor();
   }
-  if (ctx.state === 'suspended') void ctx.resume();
+  // iOS pune contextul pe „interrupted” după un apel, Siri sau o notificare: îl repornim la următorul gest
+  const st = ctx.state as string;
+  if (st === 'suspended' || st === 'interrupted') void ctx.resume().catch(() => undefined);
   return ctx;
 }
 

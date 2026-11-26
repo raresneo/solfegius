@@ -17,6 +17,6 @@ await build({
 });
 cpSync('public', 'dist', { recursive: true });
 cpSync('index.html', 'dist/index.html');
-const hash = createHash('sha1').update(readFileSync('dist/app.js')).update(readFileSync('dist/styles.css')).digest('hex').slice(0, 10);
+const hash = createHash('sha1').update(readFileSync('dist/app.js')).update(readFileSync('dist/styles.css')).update(readFileSync('dist/scena.css')).digest('hex').slice(0, 10);
 writeFileSync('dist/sw.js', readFileSync('dist/sw.js', 'utf8').replace('__VERSION__', hash));
 console.log(`dist/ gata · versiune ${hash}`);
