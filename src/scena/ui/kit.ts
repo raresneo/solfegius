@@ -7,6 +7,7 @@ import { takeStats } from '../pauses.ts';
 import type { EnvPoint, TakeStats } from '../pauses.ts';
 import type { StEx } from '../catalog.ts';
 import type { ScenaState } from '../store.ts';
+import { blip, countIn, haptic, replay, toast } from './fx.ts';
 
 export interface AutoScore {
   score: number;
@@ -105,49 +106,109 @@ export interface PhaseOpts {
   startLabel?: string;
 }
 
-/** Cronometru pe faze: pornești, iar fiecare fază trece singură, cu semnal. Poți opri sau sări oricând. */
+const BREATH = /respir|inspir|expir|destind|relax|calm|liniș/i;
+const PHASE_COLORS = ['#d4af37', '#60a5fa', '#34d399', '#f472b6', '#fb923c', '#c084fc'];
+
+/**
+ * Cronometru pe faze: 3-2-1, apoi fiecare fază trece singură, cu semnal, vibrație și un mesaj.
+ * Arată mereu ce faci acum și ce urmează; în fazele de destindere apare ghidul de respirație.
+ */
 export function phaseRunner(root: HTMLElement, phases: [string, number][], o: PhaseOpts = {}): () => void {
   const list = phases.length ? phases : [['Lucru', 120] as [string, number]];
   let i = 0;
   let left = list[0][1];
   let endAt = 0;
   let timer = 0;
+  let started = false;
+  let counting = false;
+  let lastTick = -1;
+  let shownVisual = -1;
   let release: () => void = () => undefined;
+  let cancelCount: () => void = () => undefined;
   const r = ring();
   const label = h('p', { class: 'st-phase' });
+  const count = h('small', { class: 'eyebrow' });
+  const now = h('div', { class: 'st-now' }, count, label);
+  const nextEl = h('p', { class: 'st-next muted small' });
+  const breathDot = h('i', {});
+  const breathTxt = h('span', {}, 'inspiră');
+  const breath = h('div', { class: 'st-breath', hidden: true }, breathDot, breathTxt);
   const visual = h('div', { class: 'st-visual' });
   const items = list.map(([l, s]) => h('li', {}, h('span', {}, l), h('small', { class: 'muted' }, fmt(s))));
   const play = h('button', { class: 'btn primary big', onclick: () => (timer ? pause() : start()) }, o.startLabel ?? '▶ Pornește');
   const skip = h('button', { class: 'btn ghost', onclick: () => advance(true) }, 'Faza următoare ›');
+  const wrap = h('div', { class: 'st-timer' }, visual, r.el, now, nextEl, breath, h('div', { class: 'row center' }, play, skip), h('ol', { class: 'st-phases' }, items));
   const render = () => {
-    const [l, total] = list[Math.min(i, list.length - 1)];
-    r.set(left / total, fmt(left));
-    label.textContent = i < list.length ? `${i + 1}/${list.length} · ${l}` : 'Gata';
-    items.forEach((li, k) => li.className = cls(k === i && 'on', k < i && 'done'));
-    const v = o.visual?.(i);
-    visual.replaceChildren(...(v ? [v] : []));
+    const k = Math.min(i, list.length - 1);
+    const over = i >= list.length;
+    const [l, total] = list[k];
+    wrap.style.setProperty('--ph', PHASE_COLORS[k % PHASE_COLORS.length]);
+    r.set(over ? 0 : left / total, over ? '✓' : fmt(left));
+    label.textContent = over ? 'Gata!' : l;
+    count.textContent = over ? 'Toate fazele' : list.length > 1 ? `Acum · faza ${i + 1} din ${list.length}` : 'Acum';
+    nextEl.textContent = over ? '' : i + 1 < list.length ? `Urmează: ${list[i + 1][0]}` : list.length > 1 ? 'Ultima fază' : '';
+    const breathing = !!timer && !over && BREATH.test(l);
+    breath.hidden = !breathing;
+    if (breathing) {
+      const ph = (performance.now() % 8000) / 8000;
+      breathDot.style.transform = `scale(${(ph < 0.5 ? 0.6 + 0.8 * ph : 1 - 0.8 * (ph - 0.5)).toFixed(3)})`;
+      breathTxt.textContent = ph < 0.5 ? 'inspiră' : 'expiră';
+    }
+    items.forEach((li, j) => (li.className = cls(j === i && 'on', j < i && 'done')));
+    if (shownVisual !== i) {
+      shownVisual = i;
+      const v = o.visual?.(i);
+      visual.replaceChildren(...(v ? [v] : []));
+    }
   };
   const loop = () => {
     left = Math.max(0, Math.ceil((endAt - performance.now()) / 1000));
-    if (left <= 0) advance(false);
-    else render();
+    if (left <= 0) {
+      advance(false);
+      return;
+    }
+    if (left <= 3 && left !== lastTick) {
+      lastTick = left;
+      blip(660, 0.05, 0.05);
+      replay(r.el, 'tick');
+    }
+    render();
   };
-  const start = () => {
+  const begin = () => {
+    counting = false;
     endAt = performance.now() + left * 1000;
     timer = window.setInterval(loop, 250);
     release = keepAwake();
+    play.disabled = false;
     play.textContent = '❚❚ Pauză';
     render();
+  };
+  const start = () => {
+    if (started) {
+      begin();
+      return;
+    }
+    started = true;
+    counting = true;
+    play.disabled = true;
+    cancelCount = countIn(wrap, begin);
   };
   const pause = () => {
     clearInterval(timer);
     timer = 0;
     release();
     play.textContent = '▶ Continuă';
+    render();
   };
   const advance = (manual: boolean) => {
+    if (counting) {
+      cancelCount();
+      counting = false;
+      play.disabled = false;
+    }
     if (!manual) softBell();
     i++;
+    lastTick = -1;
     if (i >= list.length) {
       clearInterval(timer);
       timer = 0;
@@ -155,18 +216,27 @@ export function phaseRunner(root: HTMLElement, phases: [string, number][], o: Ph
       play.disabled = true;
       skip.disabled = true;
       render();
+      wrap.classList.add('finished');
+      if (!manual) toast('Gata! Ai trecut prin toate fazele.', 'ok');
+      haptic([60, 40, 60]);
       o.onEnd?.();
       return;
     }
     left = list[i][1];
     endAt = performance.now() + left * 1000;
+    replay(now, 'swap');
+    if (!manual) {
+      toast(`Faza ${i} gata ✓ Acum: ${list[i][0]}`, 'ok');
+      haptic(30);
+    }
     render();
   };
-  root.append(h('div', { class: 'st-timer' }, visual, r.el, label, h('div', { class: 'row center' }, play, skip), h('ol', { class: 'st-phases' }, items)));
+  root.append(wrap);
   render();
   return () => {
     clearInterval(timer);
     release();
+    cancelCount();
   };
 }
 

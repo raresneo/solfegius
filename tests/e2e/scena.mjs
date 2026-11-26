@@ -56,7 +56,7 @@ const selfCheckAll = async (answer = 'Da') => {
   const n = await page.locator('.st-check .chk').count();
   for (let i = 0; i < n; i++) await page.locator('.st-check .chk').nth(i).getByText(answer, { exact: true }).click();
   await page.getByText('Vezi rezultatul').click();
-  await page.locator('.result .score').waitFor({ timeout: 5000 });
+  await page.locator('.result .score').waitFor({ timeout: 5000 }); await page.locator('.result .score[data-done]').waitFor({ timeout: 5000 });
 };
 
 await step('azi: cardul Scenei, cele 7 abilități neatinse, tab-ul Scenă', async () => {
@@ -94,8 +94,17 @@ await step('capitolul III: 18 exerciții și conceptele', async () => {
 await step('cronometru: fazele trec, apoi autoevaluare și rezultat; mod concentrat', async () => {
   await page.goto(base + '#/scena/ex/P1-VI-02');
   if (await page.locator('.tabbar').isVisible()) throw new Error('bara de jos e vizibilă în exercițiu');
+  if (!(await page.locator('.st-goal').count())) throw new Error('lipsește „Ce ai de făcut”');
+  if (!/Citește/.test((await page.locator('.st-stages span.on').textContent()) ?? '')) throw new Error('etapa 1 nu e aprinsă');
+  if (await page.locator('.st-stepper li').count()) {
+    await page.locator('.st-stepper li button').first().click();
+    if ((await page.locator('.st-stepper li.ok').count()) !== 1) throw new Error('pasul nu se bifează');
+  }
   await page.getByText('▶ Pornește').click();
+  await page.locator('.st-countin').waitFor({ timeout: 2000 });
   await page.getByText('❚❚ Pauză').waitFor();
+  if (!/Exersează/.test((await page.locator('.st-stages span.on').textContent()) ?? '')) throw new Error('etapa 2 nu e aprinsă');
+  if (!(await page.locator('.st-now .st-phase').textContent())) throw new Error('nu scrie ce faci acum');
   await page.waitForTimeout(1300);
   await page.screenshot({ path: `${SHOTS}/s04-cronometru.png` });
   for (let i = 0; i < 12 && !(await page.locator('.st-check').count()); i++) {
@@ -117,8 +126,9 @@ await step('observație: privești, recunoști, culori, scor automat', async () 
   await page.getByText('Am reținut ›').click();
   for (const w of seen) await page.locator('.chip-btn', { hasText: new RegExp(`^${w}$`) }).click();
   await page.getByText('Mai departe ›').click();
+  if ((await page.locator('.chip-btn.ok').count()) !== seen.length) throw new Error('lipsește feedback-ul pe obiecte');
   for (let i = 0; i < 3; i++) { await page.locator('.swatch-btn').first().click(); await page.waitForTimeout(100); }
-  await page.locator('.result .score').waitFor({ timeout: 5000 });
+  await page.locator('.result .score').waitFor({ timeout: 5000 }); await page.locator('.result .score[data-done]').waitFor({ timeout: 5000 });
   const txt = await page.locator('.result').textContent();
   if (!/9 din 9 obiecte recunoscute/.test(txt ?? '')) throw new Error(txt ?? '');
 });
@@ -128,8 +138,12 @@ await step('tempo-ritm: bați pe metronom și primești scorul', async () => {
   await page.locator('input[type=range]').first().fill('120');
   await page.getByText('● Bate tu').click();
   await page.screenshot({ path: `${SHOTS}/s06-metronom.png` });
-  for (let i = 0; i < 16; i++) { await page.waitForTimeout(500); await page.locator('.tap-pad').dispatchEvent('pointerdown'); }
-  await page.locator('.result .score').waitFor({ timeout: 15000 });
+  for (let i = 0; i < 16; i++) {
+    await page.waitForTimeout(500);
+    await page.locator('.tap-pad').dispatchEvent('pointerdown');
+    if (i === 8 && !/la timp din/.test((await page.locator('.tap-live').textContent()) ?? '')) throw new Error('fără feedback pe bătăi');
+  }
+  await page.locator('.result .score').waitFor({ timeout: 15000 }); await page.locator('.result .score[data-done]').waitFor({ timeout: 5000 });
   const txt = await page.locator('.result').textContent();
   if (!/bătăi la timp/.test(txt ?? '')) throw new Error(txt ?? '');
 });
@@ -139,6 +153,7 @@ await step('voce: înregistrezi două duble, vezi pauzele și compari', async ()
   for (let k = 0; k < 2; k++) {
     await page.getByText('● Înregistrează').click();
     await page.getByText('■ Stop').waitFor({ timeout: 8000 });
+    await page.locator('.rec-state:not([hidden])').waitFor({ timeout: 3000 });
     await page.waitForTimeout(3600);
     await page.getByText('■ Stop').click();
     await page.locator('.take').nth(k).waitFor({ timeout: 8000 });
@@ -160,9 +175,10 @@ await step('text: pauzele și accentul lui Torțov pe „Revino!”', async () =
   await page.locator('button.tok').nth(3).click();
   await page.getByText('✓ Verifică').click();
   await page.locator('.feedback', { hasText: 'Pauze: 2 din 2' }).waitFor({ timeout: 3000 });
+  if ((await page.locator('.st-text.marking .pz.ok').count()) !== 2) throw new Error('soluția nu e colorată pe pauze');
   await page.screenshot({ path: `${SHOTS}/s08-text.png` });
   await page.getByText('Gata › Autoevaluare').click();
-  await page.locator('.result .score').waitFor({ timeout: 5000 });
+  await page.locator('.result .score').waitFor({ timeout: 5000 }); await page.locator('.result .score[data-done]').waitFor({ timeout: 5000 });
   const sc = await page.locator('.result .score').textContent();
   if (sc !== '100%') throw new Error(`scor ${sc}`);
 });
