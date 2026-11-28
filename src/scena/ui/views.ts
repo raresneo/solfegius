@@ -11,11 +11,12 @@ import {
   MODE_LABEL, NEEDS_LABEL, ST_CHAPTERS, TEXT_KIND_LABEL, TEXTS, textById,
 } from '../catalog.ts';
 import type { Mode, StChapter, StEx } from '../catalog.ts';
-import { checksFor, chapterProgress, isDone, nextInChapter, planRoutine, preshowPlan, ROUTINE, scKey, selfScore, totalProgress } from '../plan.ts';
+import { checksFor, chapterProgress, isDone, nextInChapter, PASS, planRoutine, preshowPlan, ROUTINE, scKey, selfScore, totalProgress } from '../plan.ts';
 import { journalMarkdown } from '../export.ts';
 import type { ScenaState } from '../store.ts';
 import { MODE_RUNNERS, nn, seg } from './modes.ts';
 import { cls, download } from './kit.ts';
+import { countUp, haptic, replay, toast } from './fx.ts';
 import type { AutoScore, ModeCtx } from './kit.ts';
 
 export interface ScenaCtx {
@@ -138,30 +139,110 @@ function classNote(e: StEx): string {
   return 'Cere profesor sau scenă: aplicația îți dă fișa și partea pe care o poți pregăti singur.';
 }
 
-function info(e: StEx): HTMLElement {
+/** Ce faci concret cu unealta de mai jos, într-o propoziție. */
+const MODE_HINT: Record<Mode, string> = {
+  timer: 'Apasă Pornește: după 3, 2, 1 fazele trec singure, cu un semnal la fiecare. Tu doar urmezi pașii.',
+  movement: 'Apasă Pornește și mișcă-te pe faze. La semnal treci la faza următoare.',
+  circles: 'Apasă Pornește: la fiecare semnal cercul atenției se lărgește. Ține atenția doar în cercul aprins.',
+  memory: 'Privești, ții minte, apoi răspunzi. Scorul îl calculează aplicația și vezi pe loc ce ai prins.',
+  metronome: 'Pornește metronomul și lucrează pe bătăi. La „Bate tu” vezi la fiecare bătaie dacă ești la timp.',
+  record: 'Înregistrează o dublă și ascult-o. În timp ce vorbești vezi live când vorbești și când faci pauză.',
+  marking: 'Marchează pauzele și accentele, apoi Verifică: vezi în culori ce ai prins din soluția cărții.',
+  situations: 'Citește situația, imagineaz-o concret, apoi Improvizează. „Altă situație” îți dă una nouă.',
+  journal: 'Scrie scurt și concret, cu detalii pe care le vezi. Se salvează în jurnalul tău.',
+  action: 'Pornește cronometrul și fă acțiunea până la capăt. Bifează punctele de control pe măsură ce le faci.',
+  role: 'Completează pe rolul tău. Se salvează singur în partitura rolului.',
+  sheet: 'Citește punctele și notează ce iei la repetiție.',
+};
+
+/** Fișa exercițiului: scopul, durata, pașii pe care îi bifezi pe rând (pasul curent e aprins) și ce faci cu unealta. */
+function info(e: StEx, onAllSteps: () => void): HTMLElement {
   const ch = chapterByKey(e.ch);
   const base = e.variantOf ? exById(e.variantOf) : undefined;
+  const done = new Set<number>();
+  const counter = h('small', { class: 'muted' });
+  const items = e.steps.map((st, k) => h('li', {},
+    h('button', { type: 'button', onclick: () => tick(k) }, h('span', { class: 'n' }, String(k + 1)), h('span', { class: 't' }, st))));
+  const paint = () => {
+    const nowK = e.steps.findIndex((_, k) => !done.has(k));
+    items.forEach((li, k) => (li.className = cls(done.has(k) && 'ok', k === nowK && 'now')));
+    counter.textContent = `${done.size} din ${e.steps.length} pași`;
+  };
+  const tick = (k: number) => {
+    if (done.has(k)) done.delete(k);
+    else {
+      done.add(k);
+      haptic(15);
+    }
+    paint();
+    if (done.size === e.steps.length) {
+      toast('Toți pașii bifați ✓ Treci la autoevaluare când ești gata.', 'ok');
+      onAllSteps();
+    }
+  };
+  paint();
   return h('div', { class: 'st-info' },
-    h('p', { class: 'muted small' }, `${e.part === 1 ? 'Partea I' : 'Partea a II-a'} · ${ch ? `cap. ${ch.roman}` : ''} · pag. ${e.page} · ~${e.min} min · ${NEEDS_LABEL[e.needs]}`),
+    h('div', { class: 'st-goal' },
+      h('p', { class: 'eyebrow' }, 'Ce ai de făcut'),
+      h('p', { class: 'st-sum' }, e.summary),
+      h('div', { class: 'st-meta' },
+        h('span', {}, icon('timer'), `~${e.min} min`),
+        h('span', {}, icon(MODE_ICON[e.mode]), MODE_LABEL[e.mode]),
+        h('span', {}, NEEDS_LABEL[e.needs]),
+        h('span', {}, `pag. ${e.page}${ch ? ` · cap. ${ch.roman}` : ''}`)),
+    ),
     base ? h('p', { class: 'small' }, 'Variantă a exercițiului ', h('a', { class: 'link', href: `#/scena/ex/${base.id}` }, base.title)) : null,
-    h('p', { class: 'st-sum' }, e.summary),
-    e.steps.length ? h('ol', { class: 'st-steps' }, e.steps.map((s) => h('li', {}, s))) : null,
+    e.steps.length ? h('div', { class: 'st-steps-head' }, h('h2', {}, 'Pașii tăi'), counter) : null,
+    e.steps.length ? h('p', { class: 'muted small' }, 'Atinge pasul după ce l-ai făcut. Pasul aprins e cel de acum.') : null,
+    e.steps.length ? h('ol', { class: 'st-stepper' }, items) : null,
     e.feas === 'class' || e.needs !== 'solo' ? h('p', { class: 'st-class' }, classNote(e)) : null,
     e.opera ? h('div', { class: 'st-opera' }, h('strong', {}, 'La operă'), h('p', {}, e.opera)) : null,
+    h('div', { class: 'st-hint' }, icon('play'), h('span', {}, MODE_HINT[e.mode])),
   );
 }
 
-/** Corpul unui exercițiu: fișa, modul interactiv, apoi autoevaluarea (sau scorul măsurat). */
+const cheer = (sc: number): string =>
+  sc >= 0.9 ? 'Excelent. Asta e starea de lucru pe care o cauți pe scenă.'
+    : sc >= PASS ? 'Bine lucrat. Încă o repetare și intră în corp.'
+      : sc >= 0.4 ? 'Pe drum. Reia pașii pe rând, fără grabă.'
+        : 'Nu-i nimic: repetiția e antrenament, nu examen. Mai încearcă o dată.';
+
+/** Panoul de rezultat al aplicației, plus scorul care urcă, o propoziție de încurajare și vibrația de final. */
+function scResult(c: ScenaCtx, score: number, summary: string, actions: HTMLElement[]): HTMLElement {
+  const el = c.resultPanel(score, summary, actions);
+  const sc = el.querySelector<HTMLElement>('.score');
+  if (sc) {
+    sc.after(h('p', { class: 'st-cheer' }, cheer(score)));
+    countUp(sc, score);
+  }
+  haptic(score >= PASS ? [40, 60, 40] : 30);
+  return el;
+}
+
+const STAGES = ['1 · Citește', '2 · Exersează', '3 · Evaluează'];
+
+/** Corpul unui exercițiu: fișa cu pași, unealta interactivă, apoi autoevaluarea (sau scorul măsurat). */
 function exerciseBody(c: ScenaCtx, e: StEx, onFinish: (score: number, summary: string) => void, extra?: HTMLElement): { el: HTMLElement; dispose(): void } {
   const body = h('div', { class: 'ex-body' });
   const footer = h('div', { class: 'st-footer' });
+  const stages = h('div', { class: 'st-stages', 'aria-hidden': 'true' }, STAGES.map((x) => h('span', {}, x)));
+  let stage = -1;
+  const setStage = (k: number) => {
+    if (k <= stage) return;
+    stage = k;
+    [...stages.children].forEach((el, j) => (el.className = cls(j === k && 'on', j < k && 'done')));
+  };
+  setStage(0);
+  body.addEventListener('pointerdown', () => setStage(1));
   let auto: AutoScore | null = null;
   let dispose: () => void = noop;
   let finished = false;
+  const gata = h('button', { class: 'btn primary big block', onclick: () => toCheck() }, 'Gata › Autoevaluare');
   const toCheck = () => {
     if (finished) return;
     dispose();
     dispose = noop;
+    setStage(2);
     if (auto) {
       finished = true;
       onFinish(auto.score, auto.summary);
@@ -169,6 +250,7 @@ function exerciseBody(c: ScenaCtx, e: StEx, onFinish: (score: number, summary: s
     }
     const qs = checksFor(e);
     const ans: (number | null)[] = qs.map(() => null);
+    const prog = h('span', { class: 'st-check-progress' }, `0 din ${qs.length}`);
     const done = h('button', {
       class: 'btn primary big block',
       disabled: true,
@@ -178,22 +260,46 @@ function exerciseBody(c: ScenaCtx, e: StEx, onFinish: (score: number, summary: s
         onFinish(selfScore(ans), `Autoevaluare: ${n(1)} da, ${n(0.5)} parțial, ${n(0)} nu.`);
       },
     }, 'Vezi rezultatul');
+    const cards: HTMLElement[] = [];
+    qs.forEach((q, i) => {
+      const card = h('div', { class: 'chk' }, h('p', {}, q));
+      card.append(seg(['Da', 'Parțial', 'Nu'], -1, (k) => {
+        const first = ans[i] === null;
+        ans[i] = [1, 0.5, 0][k];
+        card.className = cls('chk', ['a-yes', 'a-mid', 'a-no'][k]);
+        replay(card, 'answered');
+        haptic(12);
+        const count = ans.filter((a) => a !== null).length;
+        prog.textContent = `${count} din ${qs.length}`;
+        done.disabled = count < qs.length;
+        done.classList.toggle('ready', count === qs.length);
+        if (first) cards.find((_, j) => ans[j] === null)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }));
+      cards.push(card);
+    });
     footer.replaceChildren();
     body.replaceChildren(h('div', { class: 'st-check' },
-      h('h2', {}, 'Autoevaluare'),
+      h('div', { class: 'st-steps-head' }, h('h2', {}, 'Autoevaluare'), prog),
       h('p', { class: 'muted small' }, 'Răspunde sincer: scorul e pentru tine, nu pentru profesor.'),
-      ...qs.map((q, i) => h('div', { class: 'chk' }, h('p', {}, q), seg(['Da', 'Parțial', 'Nu'], -1, (k) => {
-        ans[i] = [1, 0.5, 0][k];
-        done.disabled = ans.some((a) => a === null);
-      }))),
+      ...cards,
       done,
     ));
     body.scrollIntoView({ block: 'start', behavior: 'smooth' });
   };
-  const mc: ModeCtx = { ex: e, st: c.st, saveSt: c.saveSt, setAuto: (a) => (auto = a), complete: toCheck };
+  const mc: ModeCtx = {
+    ex: e, st: c.st, saveSt: c.saveSt,
+    setAuto: (a) => {
+      auto = a;
+      if (a) gata.classList.add('ready');
+    },
+    complete: toCheck,
+  };
   dispose = MODE_RUNNERS[e.mode](body, mc);
-  footer.append(h('button', { class: 'btn primary big block', onclick: toCheck }, 'Gata › Autoevaluare'));
-  return { el: h('div', { class: 'st-ex' }, info(e), extra ?? null, body, footer), dispose: () => dispose() };
+  footer.append(gata);
+  return {
+    el: h('div', { class: 'st-ex' }, stages, info(e, () => gata.classList.add('ready')), extra ?? null, body, footer),
+    dispose: () => dispose(),
+  };
 }
 
 function exerciseScreen(c: ScenaCtx, e: StEx, back: { href: string; label: string }, extra?: () => HTMLElement): () => void {
@@ -205,7 +311,7 @@ function exerciseScreen(c: ScenaCtx, e: StEx, back: { href: string; label: strin
       b.dispose();
       record(c, e.id, score);
       const nx = exById(e.id) ? nextInChapter(e) : undefined;
-      wrap.replaceChildren(c.resultPanel(score, summary, [
+      wrap.replaceChildren(scResult(c, score, summary, [
         h('button', { class: 'btn', onclick: () => mount() }, '↻ Încă o dată'),
         nx ? h('a', { class: 'btn primary', href: `#/scena/ex/${nx.id}` }, 'Următorul ›') : h('a', { class: 'btn primary', href: back.href }, 'Înapoi'),
       ]));
@@ -245,7 +351,7 @@ function viewSequence(c: ScenaCtx, title: string, plan: StEx[], labels: string[]
       const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
       c.app.replaceChildren(
         h('h1', {}, 'Gata pe azi'),
-        c.resultPanel(avg, `${scores.length} din ${plan.length} exerciții făcute. Mâine continui cu următoarele din carte.`, [
+        scResult(c, avg, `${scores.length} din ${plan.length} exerciții făcute. Mâine continui cu următoarele din carte.`, [
           h('a', { class: 'btn', href: '#/scena' }, 'Scena'),
           h('a', { class: 'btn primary', href: '#/' }, 'Acasă'),
         ]),
@@ -258,7 +364,7 @@ function viewSequence(c: ScenaCtx, title: string, plan: StEx[], labels: string[]
       b.dispose();
       record(c, e.id, score);
       scores.push(score);
-      holder.replaceChildren(c.resultPanel(score, summary, [h('button', { class: 'btn primary', onclick: () => step(i + 1) }, 'Continuă ›')]));
+      holder.replaceChildren(scResult(c, score, summary, [h('button', { class: 'btn primary', onclick: () => step(i + 1) }, 'Continuă ›')]));
     });
     cur = b;
     holder.append(b.el);
@@ -342,7 +448,7 @@ export function viewDeck(c: ScenaCtx, id: string): () => void {
       const s = session.stats();
       markPracticed(c.state);
       c.save();
-      box.replaceChildren(c.resultPanel(s.score, `${s.known} din ${s.total} fișe știute la final.`, [
+      box.replaceChildren(scResult(c, s.score, `${s.known} din ${s.total} fișe știute la final.`, [
         h('a', { class: 'btn', href: '#/scena/fise' }, 'Fișe'),
         h('button', { class: 'btn primary', onclick: () => viewDeck(c, id) }, '↻ Încă o rundă'),
       ]));

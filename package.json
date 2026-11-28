@@ -1,6 +1,6 @@
 {
   "name": "solfegius",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Solfegiu de la zero și pregătirea artistului liric (Stanislavski), interactiv. PWA fără dependențe la rulare.",
   "type": "module",
